@@ -13,7 +13,7 @@
 # Create: 2025
 #
 import json
-import requests
+from collect.api import request_url
 from urllib3.util.retry import Retry
 from data.common import ESClient
 from datetime import datetime, timedelta, timezone
@@ -30,7 +30,6 @@ class XiheOperationLog(object):
         self.before_days = config.get("before_days")
 
         self.esClient = ESClient(config)
-        self.session = requests.Session()
         self.headers = {"Content-Type": "application/json"}
         self.params = {"start_time": "", "end_time": ""}
 
@@ -44,8 +43,7 @@ class XiheOperationLog(object):
         for operate_type in operate_types:
             print("start to get operation log of type: %s" % operate_type)
             users = self.get_operation_users(operate_type)
-            actions = self.get_actions(users, operate_type)
-            self.esClient.safe_put_bulk(actions)
+            self.put_actions(users, operate_type)
 
     def format_datetime(self):
         if self.before_days:
@@ -70,9 +68,9 @@ class XiheOperationLog(object):
     def get_operation_users(self, operate_type):
         api_url = self.api_url + operate_type
         try:
-            response = requests.get(
+            response = request_url(
                 url=api_url,
-                params=self.params,
+                payload=self.params,
                 headers=self.headers,
                 timeout=180,
                 verify=False,
@@ -92,8 +90,9 @@ class XiheOperationLog(object):
             print(f"Get api:{api_url} failed")
             return []
 
-    def get_actions(self, users, operate_type):
+    def put_actions(self, users, operate_type):
         actions = ""
+        count = 0
 
         try:
             for user in users:
@@ -124,7 +123,14 @@ class XiheOperationLog(object):
                 actions += json.dumps(index_data) + "\n"
                 actions += json.dumps(action) + "\n"
 
+                count += 1
+                if count >= 1000:
+                    self.esClient.safe_put_bulk(actions)
+                    actions = ""
+                    count = 0
+
+            if actions:
+                self.esClient.safe_put_bulk(actions)
+
         except Exception as e:
             print(e)
-
-        return actions

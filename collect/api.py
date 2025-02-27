@@ -46,9 +46,9 @@ def exception_handler(func):
 
 
 @exception_handler
-def request_url(url, payload=None, headers=None, method="GET", stream=False, verify=False, auth=None):
+def request_url(url, payload=None, headers=None, method="GET", stream=False, verify=False, auth=None, timeout=60):
     if method == 'GET':
-        response = requests.get(url, params=payload, headers=headers, stream=stream, auth=auth, verify=verify, timeout=60)
+        response = requests.get(url, params=payload, headers=headers, stream=stream, auth=auth, verify=verify, timeout=timeout)
     else:
         response = requests.post(url, data=payload, headers=headers, stream=stream, verify=verify, auth=auth)
     return response
