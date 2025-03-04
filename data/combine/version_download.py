@@ -48,7 +48,7 @@ class VersionDownload(object):
             "must": [
                 {
                     "term": {
-                        "properties.profileType.keyword": "download"
+                        "event.keyword": "download"
                     }
                 },
                 {

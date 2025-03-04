@@ -33,6 +33,7 @@ class Meetings(object):
         self.use_headers = config.get('use_headers', 'true')
         self.query_token = config.get('query_token')
         self.page_size = config.get('page_size', 50)
+        self.meeting_headers = {'Referer': config.get('referer')}
 
     def run(self, from_time):
         print("*** Meetings collection start ***")
@@ -50,7 +51,7 @@ class Meetings(object):
                 "page": page,
                 "size": self.page_size
             }
-            res = self.esClient.request_get(url=self.meetings_url, params=params)
+            res = self.esClient.request_get(url=self.meetings_url, headers=self.meeting_headers, params=params)
             if res.status_code != 200:
                 print("Get all meeting status: ", res.status_code)
                 break
@@ -87,7 +88,7 @@ class Meetings(object):
 
     def get_participants_by_meet(self, mid):
         url = self.participants_url + mid + "/?token=" + self.query_token
-        res = self.esClient.request_get(url=url)
+        res = self.esClient.request_get(url=url, headers=self.meeting_headers)
         if res.status_code != 200:
             if res.status_code == 401:
                 print("token failed: %s,  mid: %s" % (res.status_code, mid))
