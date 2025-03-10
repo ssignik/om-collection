@@ -507,13 +507,18 @@ class SigMaintainer(object):
                     action.update({'committers': committers})
                     action.update({'committer_info': self.attach_user_info(committers)})
                     action.update({'mailing_list': self.sig_mail_dict.get(dir, 'dev@openeuler.org')})
+                    meeting_agenda = owners.get('meeting-agenda')
+                    action.update({'meeting_agenda': []}) 
+                    if meeting_agenda:
+                        action.update({'meeting_agenda': meeting_agenda})
+
                 except KeyError as e:
                     print('KeyError of %s is null.' % dir)
             except FileNotFoundError:
                 print('owner file of %s is not exist. using sig-info.yaml.' % dir)
                 try:
                     sig_info = self.sigs_dirs_path + '/' + dir + '/' + 'sig-info.yaml'
-                    info = yaml.load_all(open(sig_info), Loader=yaml.Loader).__next__()
+                    info = yaml.load_all(open(sig_info,encoding="UTF-8"), Loader=yaml.Loader).__next__()
                     if 'description' in info and info['description'] is not None:
                         action.update({'description': info['description']})
                     if 'mentors' in info and info['mentors'] is not None:
@@ -539,6 +544,10 @@ class SigMaintainer(object):
                         action.update({'committer_info': self.attach_user_info(committer_list)})
                         committers = [user[f'{self.platform}_id'] for user in committer_list]
                         action.update({'committers': committers})
+                    meeting_agenda = info.get('meeting-agenda')
+                    action.update({'meeting_agenda': []}) 
+                    if meeting_agenda:
+                        action.update({'meeting_agenda': meeting_agenda})    
                 except FileNotFoundError:
                     print('sig-info.yaml %s is not exist.' % dir)
 
