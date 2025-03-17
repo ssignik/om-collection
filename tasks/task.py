@@ -15,6 +15,7 @@
 
 
 import logging
+import os
 import time
 from configparser import ConfigParser
 
@@ -122,6 +123,7 @@ class George:
         self.sections = self.config.sections()
         self.from_data = self.config.get('general', 'from_data')
         self.sleep_time = self.config.getint('general', 'sleep_time')
+        self.delete_config('config.ini')
 
     def start(self):
         logger.info("----------------------------")
@@ -158,3 +160,14 @@ class George:
         for key, value in self.config.items(backend_name):
             backend_conf[key] = value
         return backend_conf
+
+    
+    @staticmethod
+    def delete_config(path='config.ini'):
+        try:
+            os.remove(path)
+            print(f"文件 '{path}' 删除成功")
+        except Exception as e:
+            print(f"删除文件时出错: {path}", e)
+
+
