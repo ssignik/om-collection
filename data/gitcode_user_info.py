@@ -62,7 +62,11 @@ class GitcodeUserInfo(object):
         if info["gitcode_id"] in user_info.keys():
             return user_info[info["gitcode_id"]]
         else:
-            user_id = self.gitcode_helper.get_user_by_gitcode_id(info["gitcode_id"])
+            try:
+                user_id = self.gitcode_helper.get_user_by_gitcode_id(info["gitcode_id"])
+            except Exception as e:
+                print(e)
+                user_id = None
             user_info[info["gitcode_id"]] = user_id
             return user_id
 
@@ -88,7 +92,11 @@ class GitcodeUserInfo(object):
             ]
             need_add = list(set(developers) - set(user_info.keys()))
             for user in need_add:
-                user_id = self.gitcode_helper.get_user_by_gitcode_id(user)
+                try:
+                    user_id = self.gitcode_helper.get_user_by_gitcode_id(user)
+                except Exception as e:
+                    print(f"get user_id failed, user:{user}")
+                    continue
                 sig_info["repo_developer"][repo_name].append(
                     {
                         "gitcode_id": user,
@@ -242,9 +250,13 @@ class GitCodeHelper:
         page = 1
         while True:
             url = self.repo_user_url.format(repo_name, self._token, page)
-            resp = self._request_handler.get(url)
+            try:
+                resp = self._request_handler.get(url)
+            except Exception as e:
+                print(f"get user by repo failed, repo:{repo_name}, error:{e}")
+                break
             time.sleep(1)  # to resolve 429
-            users.extend([user["name"] for user in resp])
+            users.extend([user["username"] for user in resp])
             if len(resp) >= 100:
                 page += 1
                 continue
