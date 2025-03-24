@@ -12,7 +12,6 @@
 # See the Mulan PSL v2 for more details.
 # Create: 2022-03
 #
-
 import base64
 import datetime
 import hashlib
@@ -34,6 +33,7 @@ from data.common import ESClient
 
 GITEE_BASE = "gitee.com"
 GITHUB_BASE = "github.com"
+GITCODE_BASE = "gitcode.com"
 HUGGINGFACE_BASE = "huggingface.co"
 CODEARTS_BASE = "codehub.devcloud.cn-southwest-2.huaweicloud.com"  # codearts域名
 DEFAULT_BRANCH_HEAD = "  origin/HEAD ->"
@@ -42,9 +42,9 @@ DEFAULT_BRANCH_HEAD = "  origin/HEAD ->"
 class GitCommitLog(object):
     def __init__(self, config=None):
         self.config = config
-        self.org = config.get('org') # 组织名称
-        self.index_name = config.get('index_name') # ES索引名称
-        self.code_base_path = config.get('code_base_path') #代码拉取到本地的存储根目录
+        self.org = config.get('org')
+        self.index_name = config.get('index_name')
+        self.code_base_path = config.get('code_base_path')
         self.platform_owner_token = config.get('platform_owner_token')
         self.start_date = config.get('start_date')
         self.end_date = config.get('end_date')
@@ -54,12 +54,12 @@ class GitCommitLog(object):
         self.github_repo_branch = config.get('github_repo_branch')
         self.username = config.get('username')
         self.password = config.get('password')
-        self.write_bulk = int(config.get('write_bulk', 1000)) # 写入ES的批次大小，默认1000。累积到1000后，一次bulk写入
+        self.write_bulk = int(config.get('write_bulk', 1000))
         self.esClient = ESClient(config)
         self.email_orgs_dict = {}
         self.domain_orgs_dict = {}
         self.repo_sigs_dict = defaultdict(dict)
-        self.white_box_yaml = config.get('white_box_yaml') # 白名单指定仓库的YAML路径
+        self.white_box_yaml = config.get('white_box_yaml')
         self.codearts_yaml = config.get('codearts_yaml')
         self.upstream_yaml = config.get('upstream_yaml')
         self.user_file = config.get('user_file')
@@ -70,9 +70,11 @@ class GitCommitLog(object):
         self.huggingface_access_token = config.get('huggingface_access_token')
         self.github_access_token = config.get('github_access_token')
         self.gitee_access_token = config.get('gitee_access_token')
-        self.codearts_password = config.get('codearts_password')  
+        self.codearts_password = config.get('codearts_password')
+        self.gitcode_access_token = config.get('gitcode_access_token')
         self.tokens = config.get('tokens').split(',') if config.get('tokens') else None
-        
+        self.base_api = config.get('base_api')
+
         self.email_user_dict = {}
 
     def run(self, from_time):
@@ -123,7 +125,6 @@ class GitCommitLog(object):
 
             # 指定了仓库则获取指定仓库数据，否则获取owner下的所有仓库
             repos = []
-            # 使用CodeArtsClients获取codearts仓库列表
             if platform == 'gitee':
                 if self.gitee_repo_branch:
                     repos = self.gitee_repo_branch.split(';')
@@ -134,6 +135,8 @@ class GitCommitLog(object):
                     repos = self.github_repo_branch.split(';')
                 else:
                     repos = self.github_repos(owner=owner, token=token)
+            elif platform == 'gitcode':
+                repos = self.gitcode_repos(owner=owner, token=token)
             else:
                 # 预留其它平台扩展
                 continue
@@ -143,8 +146,6 @@ class GitCommitLog(object):
                     continue
                 rb = repo.split('->')
                 branch_name = rb[1]
-
-                # 配置如果是self.all_repo_default_branch == 'true',只获取默认分支
                 if self.all_repo_default_branch == 'true':
                     branch_name = 'default'
                 try:
@@ -163,11 +164,13 @@ class GitCommitLog(object):
         code_path = owner_path + repo_name
 
         username = base64.b64decode(self.username).decode()
-
         # 托管平台格式构造远程仓库URL
         if platform == 'gitee':
             remote_repo = 'https://%s/%s/%s' % (GITEE_BASE, owner, repo_name)
             clone_url = 'https://%s:%s@%s/%s/%s' % (username, self.gitee_access_token, GITEE_BASE, owner, repo_name)
+        elif platform == 'gitcode':
+            remote_repo = 'https://%s/%s/%s' % (GITCODE_BASE, owner, repo_name)
+            clone_url = 'https://%s:%s@%s/%s/%s' % (username, self.gitcode_access_token, GITCODE_BASE, owner, repo_name)
         elif platform == 'github':
             remote_repo = 'https://%s/%s/%s' % (GITHUB_BASE, owner, repo_name)
             clone_url = 'https://%s:%s@%s/%s/%s' % (username, self.github_access_token, GITHUB_BASE, owner, repo_name)
@@ -196,7 +199,7 @@ class GitCommitLog(object):
         # 用GitPython加载本地仓库
         try:
             repo = git.Repo(code_path)
-            repo.git.remote('prune', 'origin') # 清理远程无效分支
+            repo.git.remote('prune', 'origin')
         except Exception:
             print('*** repo clone fail: %s' % remote_repo)
             return
@@ -212,15 +215,12 @@ class GitCommitLog(object):
                 break
         if branch_name == 'default':
             branch_name = default_branch
-
-        # 分支不为空，代表获取指定分支，否则遍历所有远程分支
         if branch_name != '':
             print('*** start %s repo: %s/%s; branch: %s ***' % (platform, owner, repo_name, branch_name))
             # checkout到指定分支
             if self.check_branch_faild(repo, branch_name):
                 return
             self.get_pull_branch(repo, code_path, branch_name)
-
             # 拉取merges commits
             merge_commits = list(
                 repo.iter_commits(since=self.start_date, until=self.end_date, author=self.user_commit_name,
@@ -241,7 +241,6 @@ class GitCommitLog(object):
                 if self.check_branch_faild(repo, branch_name):
                     continue
                 self.get_pull_branch(repo, code_path, branch_name)
-
                 merge_commits = list(
                     repo.iter_commits(since=self.start_date, until=self.end_date, author=self.user_commit_name,
                                       merges=True))
@@ -251,8 +250,7 @@ class GitCommitLog(object):
                     repo.iter_commits(since=self.start_date, until=self.end_date, author=self.user_commit_name,
                                       no_merges=True))
                 self.parse_commits(no_merge_commits, platform, owner, branch_name, remote_repo, 0, default_branch,
-                                   repo_name)               
-
+                                   repo_name)
 
     # 数据解析
     def parse_commits(self, commits, platform, owner, branch, repo_url, is_merge, default_branch, repo_name):
@@ -451,7 +449,53 @@ class GitCommitLog(object):
         for repo in repos:
             repos_names.append(repo['name'] + '->')
         return repos_names
-    
+
+    def gitcode_repos(self, owner, token, page=1):
+        url = f"{self.base_api}/orgs/{owner}/repos"
+        params = {
+            'page': page,
+            'per_page': 100,
+            'access_token': token
+        }
+        resp = self.fetch_items(url, params)
+        repos = self.getGenerator(resp)
+        repos_names = []
+        for repo in repos:
+            repos_names.append(repo['name'] + '->')
+        return repos_names
+
+    def fetch_items(self, url, payload):
+        page = 1
+        total_page = None
+        headers = {
+        'Accept': 'application/json'
+        }
+
+        response = requests.Session().get(url, params=payload, headers=headers, timeout=60)
+
+        if response.status_code != 200:
+            print("Gitee api get error: ", response.text)
+            return "Gitee api get error."
+
+        items = response.text
+        
+        total_page = response.headers.get('total_page')
+
+        if total_page:
+            total_page = int(total_page)
+            print("Page: %i/%i" % (page, total_page))
+
+        page += 1
+        while items:
+            yield items
+            items = None
+            if page <= total_page:
+                payload['page'] = page
+                response = requests.Session().get(url, params=payload, headers=headers, timeout=60)
+                page += 1
+                items = response.text
+                print("Page: %i/%i" % (page, total_page))
+
     def getGenerator(self, response):
         data = []
         try:
@@ -586,7 +630,6 @@ class GitCommitLog(object):
             if file.get('download_url', '').endswith('yaml'):
                 yaml_list.append(file.get('download_url'))
         return yaml_list
-
 
     def get_user_info_from_yaml(self, yaml_list):
         users = []
