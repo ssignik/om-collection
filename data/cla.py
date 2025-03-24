@@ -36,6 +36,7 @@ class Cla(object):
         self.claIds = self.esClient.getEsIds(self.index_name)
         self.corporationIds = self.esClient.getEsIds(self.index_name_corporation)
         self.company_location_index = config.get('company_location_index')
+        self.token = config.get('token')
 
     def run(self, from_time):
         print("Collect CLA data: start")
@@ -47,12 +48,15 @@ class Cla(object):
 
     def getClaCorporationsSigning(self):
         # first: get token
-        token = self.claClient.get_token_cla()
-        headers = {'token': token}
+        headers = {'token': self.token}
 
         # second: get link
+        params = {
+            'platform': self.claClient.platform,
+            'orgs': self.orgs.split(',')
+        }
         link_url = f'{self.api_url}/{LINK}'
-        link_infos = self.claClient.fetch_cla(url=link_url, method='get', headers=headers)
+        link_infos = self.claClient.fetch_cla(url=link_url, method='get', headers=headers, params=params)
         link_id = ''
         for link_info in link_infos['data']:
             if link_info['org_id'] != self.orgs:
@@ -155,12 +159,17 @@ class Cla(object):
 
     def getClaIndiviualsSigning(self):
         # first: get token
-        token = self.claClient.get_token_cla()
-        headers = {'token': token}
+        headers = {'token': self.token}
+
+        # second: get link
+        params = {
+            'platform': self.claClient.platform,
+            'orgs': self.orgs.split(',')
+        }
 
         # second: get link
         link_url = f'{self.api_url}/{LINK}'
-        link_infos = self.claClient.fetch_cla(url=link_url, method='get', headers=headers)
+        link_infos = self.claClient.fetch_cla(url=link_url, method='get', headers=headers, params=params)
         link_id = ''
         for link_info in link_infos['data']:
             if link_info['org_id'] != self.orgs:
