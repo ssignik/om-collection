@@ -74,7 +74,7 @@ class GitCommitLog(object):
         self.gitcode_access_token = config.get('gitcode_access_token')
         self.tokens = config.get('tokens').split(',') if config.get('tokens') else None
         self.base_api = config.get('base_api')
-
+        self.session = requests.Session()
         self.email_user_dict = {}
 
     def run(self, from_time):
@@ -471,11 +471,10 @@ class GitCommitLog(object):
         'Accept': 'application/json'
         }
 
-        response = requests.Session().get(url, params=payload, headers=headers, timeout=60)
+        response = self.session.get(url, params=payload, headers=headers, timeout=60)
 
         if response.status_code != 200:
             print("Gitee api get error: ", response.text)
-            return "Gitee api get error."
 
         items = response.text
         
@@ -491,7 +490,7 @@ class GitCommitLog(object):
             items = None
             if page <= total_page:
                 payload['page'] = page
-                response = requests.Session().get(url, params=payload, headers=headers, timeout=60)
+                response = self.session.get(url, params=payload, headers=headers, timeout=60)
                 page += 1
                 items = response.text
                 print("Page: %i/%i" % (page, total_page))
