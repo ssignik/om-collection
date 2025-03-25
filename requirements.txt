@@ -21,3 +21,5 @@ mysql-connector-python
 
 # pystan==2.19.1.1
 # prophet==1.0.1
+sqlalchemy~=2.0.39
+psycopg2-binary==2.9.10

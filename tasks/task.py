@@ -42,6 +42,7 @@ BACKEND_MAPPING = {
     'git_commit': 'data.git_commit.GitCommit',
     'cloc': 'data.cloc.ClocCode',
     'meetings': 'data.meetings.Meetings',
+    'meetings_pg': 'data.meetings_pg.Meetings',
     'report_email': 'data.report_email.ReportEmail',
     'cve': 'data.cve.CVE',
     'cla': 'data.cla.Cla',

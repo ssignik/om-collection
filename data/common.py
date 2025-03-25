@@ -1537,7 +1537,6 @@ class ESClient(object):
 
     def get_from_date(self, filters=[]):
         last_update = self.get_last_update_from_es(filters)
-        last_update = last_update
 
         # if last_update is None:
         #     last_update = str_to_datetime("2020-04-26T14:26+08:00")
