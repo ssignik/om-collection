@@ -36,7 +36,6 @@ def send_email(smtp_host, smtp_port, sendAddr, password, recipientAddrs, subject
     msg['from'] = sendAddr
     msg['to'] = recipientAddrs
     msg['subject'] = subject
-    content = content
     txt = email.mime.text.MIMEText(content, 'plain', 'utf-8')
     msg.attach(txt)
 

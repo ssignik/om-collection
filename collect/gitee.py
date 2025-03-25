@@ -485,7 +485,6 @@ class GiteeClient():
 
         if response.status_code != 200:
             print("Gitee api get error: ", response.text)
-            return "Gitee api get error."
 
         items = response.text
 
