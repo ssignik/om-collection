@@ -507,7 +507,7 @@ class SigMaintainer(object):
                     action.update({'committers': committers})
                     action.update({'committer_info': self.attach_user_info(committers)})
                     action.update({'mailing_list': self.sig_mail_dict.get(dir, 'dev@openeuler.org')})
-                    meeting_agenda = owners.get('meeting-agenda')
+                    meeting_agenda = owners.get('meeting_agenda')
                     action.update({'meeting_agenda': []}) 
                     if meeting_agenda:
                         action.update({'meeting_agenda': meeting_agenda})
@@ -544,7 +544,7 @@ class SigMaintainer(object):
                         action.update({'committer_info': self.attach_user_info(committer_list)})
                         committers = [user[f'{self.platform}_id'] for user in committer_list]
                         action.update({'committers': committers})
-                    meeting_agenda = info.get('meeting-agenda')
+                    meeting_agenda = info.get('meeting_agenda')
                     action.update({'meeting_agenda': []}) 
                     if meeting_agenda:
                         action.update({'meeting_agenda': meeting_agenda})    
