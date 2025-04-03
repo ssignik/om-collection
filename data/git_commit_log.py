@@ -161,7 +161,7 @@ class GitCommitLog(object):
         owner_path = self.code_base_path + platform + os.sep + owner + os.sep
         if not os.path.exists(owner_path):
             os.makedirs(owner_path)
-        code_path = owner_path + repo_name
+        code_path = owner_path + repo_name.split('/')[-1]
 
         username = base64.b64decode(self.username).decode()
         # 托管平台格式构造远程仓库URL
@@ -544,8 +544,8 @@ class GitCommitLog(object):
         for repo in repos:
             items = repo.split('/')
             platform = items[2].replace('.com', '').replace('.co', '')
-            owner = items[-2]
-            repo_name = items[-1]
+            owner = items[3]
+            repo_name = '/'.join(items[4::])
             branch_name = branch
             path = '/'.join(items[3::])
             try:
