@@ -1265,7 +1265,8 @@ class Gitee(object):
                 client = GiteePrVersion(self.config)
                 client.index_name_gitee = self.index_name
                 prs = body.split('Origin pull request:')
-                origin_pr = prs[1].split('###')[0].strip()
+                origin_pr = prs[1].split('#')[0].strip()
+                origin_pr = origin_pr.replace('e.gitee.com/open_euler/repos', 'gitee.com')
                 user = client.get_origin_pr_author(origin_pr)
             except Exception:
                 print(f'parse pr author error: {pull_url}')
