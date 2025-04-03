@@ -37,6 +37,7 @@ import datetime
 from json import JSONDecodeError
 from data import common
 from data.common import ESClient
+from data.gitee_pr_version import GiteePrVersion
 from collect.gitee import GiteeClient
 
 logger = logging.getLogger(__name__)
@@ -1246,6 +1247,8 @@ class Gitee(object):
         #    rich_pr.update(self.get_item_project(rich_pr))
         userExtra = self.esClient.getUserInfo(rich_pr['user_login'], pull_request['created_at'])
         rich_pr.update(userExtra)
+        pr_author = self.refresh_sync_pr_author(rich_pr['body'], rich_pr['pull_url'])
+        rich_pr.update(pr_author)
         rich_pr['addcodenum'] = pull_request['codediffadd']
         rich_pr['deletecodenum'] = pull_request['codediffdelete']
         if 'project' in item:
@@ -1255,6 +1258,19 @@ class Gitee(object):
 
         return rich_pr
 
+    def refresh_sync_pr_author(self, pull_url, body):
+        user = {}
+        if body and 'Origin pull request:' in body:
+            try:
+                client = GiteePrVersion(self.config)
+                client.index_name_gitee = self.index_name
+                prs = body.split('Origin pull request:')
+                origin_pr = prs[1].split('###')[0].strip()
+                user = client.get_origin_pr_author(origin_pr)
+            except Exception:
+                print(f'parse pr author error: {pull_url}')
+        return user
+    
     def mark_invalid_pr_by_title(self, title):
         for item in self.invalid_pr_title.split(";"):
             if str(title).__contains__(item):

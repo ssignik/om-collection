@@ -56,12 +56,12 @@ class BlueZoneUser(object):
                 self.get_pr_gitee()
                 self.get_issue_gitee()
                 self.get_pr_issue_comment_gitee()
-                self.get_commit(indexs_str=self.gitee_commit_index)
             if user['github_id'] is not None and user['github_id'] != '':
                 self.get_pr_github()
                 self.get_issue_github()
                 self.get_pr_issue_comment_github()
-                self.get_commit(indexs_str=self.github_commit_index)
+            self.get_commit(indexs_str=self.github_commit_index)
+            self.get_commit(indexs_str=self.gitee_commit_index)
 
     def userFromExcel(self):
         wb = xlrd.open_workbook("C:\\Users\\Administrator\\Desktop\\blue_zone_user.xls")
