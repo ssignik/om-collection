@@ -117,12 +117,13 @@ class GiteePrVersion(object):
             if body and 'Origin pull request:' in body:
                 try:
                     prs = body.split('Origin pull request:')
-                    origin_pr = prs[1].split('###')[0].strip()
+                    origin_pr = prs[1].split('#')[0].strip()
+                    origin_pr = origin_pr.replace('e.gitee.com/open_euler/repos', 'gitee.com')
                     user = self.get_origin_pr_author(origin_pr)
                     if user:
                         pr_details.update(user)
-                except:
-                    print('error')
+                except Exception as e:
+                    print('error: ', e)
 
             index_data = {"index": {"_index": self.index_name, "_id": pr_details['id']}}
             actions += json.dumps(index_data) + '\n'
@@ -159,6 +160,6 @@ class GiteePrVersion(object):
                 'user_name': d['_source']['user_name'],
                 'tag_user_company': d['_source']['tag_user_company'],
                 'is_project_internal_user': d['_source']['is_project_internal_user'],
-                'is_admin_added': d['_source']['is_admin_added']
+                'is_admin_added': 1
             }
         return user_info
