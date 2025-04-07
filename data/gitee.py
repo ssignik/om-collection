@@ -1247,7 +1247,7 @@ class Gitee(object):
         #    rich_pr.update(self.get_item_project(rich_pr))
         userExtra = self.esClient.getUserInfo(rich_pr['user_login'], pull_request['created_at'])
         rich_pr.update(userExtra)
-        pr_author = self.refresh_sync_pr_author(rich_pr['body'], rich_pr['pull_url'])
+        pr_author = self.refresh_sync_pr_author(rich_pr['pull_url'], rich_pr['body'])
         rich_pr.update(pr_author)
         rich_pr['addcodenum'] = pull_request['codediffadd']
         rich_pr['deletecodenum'] = pull_request['codediffdelete']

@@ -36,25 +36,33 @@ class Meetings(object):
         self.meeting_headers = {'Referer': config.get('referer')}
 
     def run(self, from_time):
+        date_list = self.get_meeting_date()
         print("*** Meetings collection start ***")
         self.getGiteeId2Company()
-        self.get_all_meetings()
+        self.get_all_meetings(date_list)
         self.tagUserOrgChanged()
 
-    def get_all_meetings(self):
+    def get_meeting_date(self):
+        print('get meeting date...')
+        date_list = []
+        params = {
+            "date": datetime.datetime.today().strftime("%Y-%m-%d")
+        }
+        res = self.esClient.request_get(url=f'{self.meetings_url}/meeting_date/', params=params)
+        if res.status_code != 200:
+            print("Get all meeting status: ", res.status_code, res.text)
+            return date_list
+        date_list = res.json().get("data")
+        return list(set(date_list))
+
+    def get_all_meetings(self, date_list):
         print('get all meetings start...')
-        page = 0
-        while True:
-            page += 1
-            params = {
-                "token": self.query_token,
-                "page": page,
-                "size": self.page_size
-            }
-            res = self.esClient.request_get(url=self.meetings_url, headers=self.meeting_headers, params=params)
+        for date in date_list:
+            params = {"date": date}
+            res = self.esClient.request_get(url=f'{self.meetings_url}/meeting/', params=params)
             if res.status_code != 200:
-                print("Get all meeting status: ", res.status_code)
-                break
+                print("Get all meeting status: ", res.status_code, res.text)
+                continue
             meeting_list = res.json().get("data")
             actions = ''
             for meeting in meeting_list:
@@ -71,10 +79,10 @@ class Meetings(object):
         meet_date = datetime.datetime.strptime(meeting.get("end"), "%H:%M") - datetime.datetime.strptime(
             meeting.get("start"), "%H:%M")
         meeting["duration_time"] = int(meet_date.seconds)
-        participants = self.get_participants_by_meet(meeting.get("mid"))
+        participants = self.get_participants_by_meet_opengauss(meeting.get("id"))
         if participants == -1:
             return ''
-        tuple_sList = [tuple(d.items()) for d in participants.get("participants", [])]
+        tuple_sList = [tuple(d.items()) for d in participants]
         unique_list = list(set(tuple_sList))
         unique_dict = [dict(t) for t in unique_list]
         meeting["total_records"] = len(unique_dict)
@@ -83,6 +91,9 @@ class Meetings(object):
         if meeting['sponsor'] in self.esClient.giteeid_company_dict:
             company = self.esClient.giteeid_company_dict[meeting['sponsor']]
         meeting["tag_user_company"] = company
+        meeting["is_delete"] = 1 if meeting["is_delete"] else 0
+        if meeting["is_delete"]:
+            meeting["is_removed"] = 1
         action = common.getSingleAction(self.index_name, meeting['id'], meeting)
         return action
 
@@ -102,6 +113,26 @@ class Meetings(object):
 
         participants = res.json()
         return participants
+
+    def get_participants_by_meet_opengauss(self, mid):
+        url = f'{self.participants_url}{mid}/'
+        res = self.esClient.request_get(url=url)
+        if res.status_code != 200:
+            if res.status_code == 401:
+                print("token failed: %s,  mid: %s" % (res.status_code, mid))
+                return -1
+            elif res.status_code == 404:
+                print("participants not found: %s,  mid: %s" % (res.status_code, mid))
+                return []
+            else:
+                print("Get participants failed: %s,  mid: %s" % (res.status_code, mid))
+                return []
+
+        participants = res.json()
+        resp = []
+        for participant in participants:
+            resp.append({'name': participant})
+        return resp
 
     def getGiteeId2Company(self):
         dic = self.esClient.getOrgByGiteeID()
