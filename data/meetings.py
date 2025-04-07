@@ -128,7 +128,7 @@ class Meetings(object):
                 print("Get participants failed: %s,  mid: %s" % (res.status_code, mid))
                 return []
 
-        participants = res.json()
+        participants = res.json().get('data')
         resp = []
         for participant in participants:
             resp.append({'name': participant})
