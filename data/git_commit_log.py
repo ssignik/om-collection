@@ -200,8 +200,9 @@ class GitCommitLog(object):
         try:
             repo = git.Repo(code_path)
             repo.git.remote('prune', 'origin')
-        except Exception:
-            print('*** repo clone fail: %s' % remote_repo)
+            self.remove_deleted_branch(repo)
+        except Exception as e:
+            print('*** repo clone fail: %s' % remote_repo, e)
             return
 
         self.reset_remote_url(repo, clone_url)
@@ -386,6 +387,23 @@ class GitCommitLog(object):
                 }''' % (company, start_date, end_date, email, company)
                 start_date = end_date
                 self.esClient.updateByQuery(query=query.encode('utf-8'))
+
+    def remove_deleted_branch(self, repo):
+        origin = repo.remote(name='origin')
+        origin.fetch()
+        branches = repo.git.branch('-r').split('\n')
+        old_branches = repo.heads
+        branches = [branch.split('/', 1)[1].strip() for branch in branches]
+        old_branches = [branch.name.strip() for branch in old_branches]
+        remove_branches = set(old_branches) - set(branches)
+        for branch in remove_branches:
+            self.deleted_branch(repo, branch)
+    
+    def deleted_branch(self, repo, branch):
+        try:
+            repo.git.branch('-D', branch)
+        except GitCommandError as e:
+            print(f'delete {branch} failed:', e)
 
     # 删除git lock
     def removeGitLockFile(self, code_path):
