@@ -1098,9 +1098,10 @@ class Gitee(object):
             ecommit['org_name'] = owner
 
             # Copy data from the raw commit
-            ecommit['url'] = commit['html_url']
-            ecommit['commit_url'] = commit['html_url']
-            ecommit['sha'] = commit['sha']
+            if isinstance(commit, dict) and 'html_url' in commit:
+                ecommit['url'] = commit['html_url']
+                ecommit['commit_url'] = commit['html_url']
+                ecommit['sha'] = commit['sha']
 
             committer = commit.get('committer', None)
             author = commit.get('author', None)
@@ -1270,6 +1271,10 @@ class Gitee(object):
                 user = client.get_origin_pr_author(origin_pr)
             except Exception:
                 print(f'parse pr author error: {pull_url}')
+
+        if user is None:
+            user = {}
+
         return user
     
     def mark_invalid_pr_by_title(self, title):
