@@ -350,15 +350,15 @@ class GitCommitLog(object):
         for company_info in companies:
             if commit_time < company_info['end_date']:
                 return company_info['company_name']
-        return companies[0]['company_name']
+        return companies[-1]['company_name']
 
     def update_company_changed(self):
         for email, companies in self.email_orgs_dict.items():
             start_date = '0000-01-01'
-            for i in range(1, len(companies)):
+            for i in range(0, len(companies)):
                 if start_date > self.start_date:
                     continue
-                end_date = companies[i]['end_date']
+                end_date = companies[i]['end_date'] if companies[i]['end_date'] else '9999-12-31'
                 company = companies[i]['company_name']
                 query = '''{
                     "script": {
@@ -378,7 +378,7 @@ class GitCommitLog(object):
                                 {
                                     "query_string": {
                                         "analyze_wildcard": true,
-                                        "query": "email.keyword.keyword:%s AND !tag_user_company.keyword:%s"
+                                        "query": "email.keyword:\\"%s\\" AND !tag_user_company.keyword:%s"
                                     }
                                 }
                             ]
@@ -591,7 +591,7 @@ class GitCommitLog(object):
                     company['company_name'] = user_company
                     user_companies.append(company)
 
-                user_companies.sort(key=lambda x: x['end_date'])
+                user_companies.sort(key=lambda x: x['end_date'] if x['end_date'] else '9999-12-31')
                 for email in user['emails']:
                     email_org_dict.update({email: user_companies})
                     email_user_dict.update({email: user.get('user_name')})
