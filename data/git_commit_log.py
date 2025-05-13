@@ -200,8 +200,9 @@ class GitCommitLog(object):
         try:
             repo = git.Repo(code_path)
             repo.git.remote('prune', 'origin')
-        except Exception:
-            print('*** repo clone fail: %s' % remote_repo)
+            self.remove_deleted_branch(repo)
+        except Exception as e:
+            print('*** repo clone fail: %s' % remote_repo, e)
             return
 
         self.reset_remote_url(repo, clone_url)
@@ -349,15 +350,15 @@ class GitCommitLog(object):
         for company_info in companies:
             if commit_time < company_info['end_date']:
                 return company_info['company_name']
-        return companies[0]['company_name']
+        return companies[-1]['company_name']
 
     def update_company_changed(self):
         for email, companies in self.email_orgs_dict.items():
             start_date = '0000-01-01'
-            for i in range(1, len(companies)):
+            for i in range(0, len(companies)):
                 if start_date > self.start_date:
                     continue
-                end_date = companies[i]['end_date']
+                end_date = companies[i]['end_date'] if companies[i]['end_date'] else '9999-12-31'
                 company = companies[i]['company_name']
                 query = '''{
                     "script": {
@@ -377,7 +378,7 @@ class GitCommitLog(object):
                                 {
                                     "query_string": {
                                         "analyze_wildcard": true,
-                                        "query": "email.keyword.keyword:%s AND !tag_user_company.keyword:%s"
+                                        "query": "email.keyword:\\"%s\\" AND !tag_user_company.keyword:%s"
                                     }
                                 }
                             ]
@@ -386,6 +387,23 @@ class GitCommitLog(object):
                 }''' % (company, start_date, end_date, email, company)
                 start_date = end_date
                 self.esClient.updateByQuery(query=query.encode('utf-8'))
+
+    def remove_deleted_branch(self, repo):
+        origin = repo.remote(name='origin')
+        origin.fetch()
+        branches = repo.git.branch('-r').split('\n')
+        old_branches = repo.heads
+        branches = [branch.split('/', 1)[1].strip() for branch in branches]
+        old_branches = [branch.name.strip() for branch in old_branches]
+        remove_branches = set(old_branches) - set(branches)
+        for branch in remove_branches:
+            self.deleted_branch(repo, branch)
+    
+    def deleted_branch(self, repo, branch):
+        try:
+            repo.git.branch('-D', branch)
+        except GitCommandError as e:
+            print(f'delete {branch} failed:', e)
 
     # 删除git lock
     def removeGitLockFile(self, code_path):
@@ -573,7 +591,7 @@ class GitCommitLog(object):
                     company['company_name'] = user_company
                     user_companies.append(company)
 
-                user_companies.sort(key=lambda x: x['end_date'])
+                user_companies.sort(key=lambda x: x['end_date'] if x['end_date'] else '9999-12-31')
                 for email in user['emails']:
                     email_org_dict.update({email: user_companies})
                     email_user_dict.update({email: user.get('user_name')})

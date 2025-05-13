@@ -514,6 +514,8 @@ class SigMaintainer(object):
                 try:
                     sig_info = self.sigs_dirs_path + '/' + dir + '/' + 'sig-info.yaml'
                     info = yaml.load_all(open(sig_info), Loader=yaml.Loader).__next__()
+                    for key, value in info.items():
+                        action[key] = value
                     if 'description' in info and info['description'] is not None:
                         action.update({'description': info['description']})
                     if 'mentors' in info and info['mentors'] is not None:
