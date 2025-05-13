@@ -516,7 +516,6 @@ class SigMaintainer(object):
                     info = yaml.load_all(open(sig_info), Loader=yaml.Loader).__next__()
                     for key, value in info.items():
                         action[key] = value
-                    action.pop('repositories', None)
                     if 'description' in info and info['description'] is not None:
                         action.update({'description': info['description']})
                     if 'mentors' in info and info['mentors'] is not None:
