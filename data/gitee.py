@@ -693,6 +693,21 @@ class Gitee(object):
     # Multi-layer variable
     def findVar(self, versionStr, spec):
         global strsss
+        try:
+            cond_pattern = re.compile(r'%\{\?([^:}]+):([^}]*)\}(.*?)%\{\!\?\1:([^}]*)\}')
+        
+            def handle_cond(match):
+                try:
+                    var = match.group(1)
+                    true_val = match.group(2)
+                    false_val = match.group(4)
+                    return true_val if (var in spec.macros and spec.macros[var]) else false_val
+                except:
+                    return match.group(0)
+            
+            versionStr = cond_pattern.sub(handle_cond, versionStr)
+        except Exception as e:
+            print(f"Conditional macro error: {str(e)}")
         allVar = re.findall(r'%{(.*?)}', versionStr)
         if len(allVar) == 0:
             strsss = versionStr
@@ -814,7 +829,7 @@ class Gitee(object):
             x['codediffadd'] = codediffadd
             x['codediffdelete'] = codediffdelete
             eitem = self.__get_rich_pull(x, merged_item)
-            actions += self.write_pull_commit_data(pull_commits, eitem, owner, sig_names)
+            # actions += self.write_pull_commit_data(pull_commits, eitem, owner, sig_names)
 
             ecomments = self.get_rich_pull_reviews(pull_review_comments, eitem, owner)
             res_comment = self.write_comment_data(ecomments, eitem, sig_names, data_type='pull')
@@ -1097,6 +1112,8 @@ class Gitee(object):
             ecommit['item_type'] = COMMIT_TYPE
             ecommit['org_name'] = owner
 
+            if not isinstance(commit, dict):
+                continue
             # Copy data from the raw commit
             if isinstance(commit, dict) and 'html_url' in commit:
                 ecommit['url'] = commit['html_url']
@@ -1271,10 +1288,7 @@ class Gitee(object):
                 user = client.get_origin_pr_author(origin_pr)
             except Exception:
                 print(f'parse pr author error: {pull_url}')
-
-        if user is None:
-            user = {}
-
+        user = {} if not user else user
         return user
     
     def mark_invalid_pr_by_title(self, title):
