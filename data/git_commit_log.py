@@ -76,6 +76,7 @@ class GitCommitLog(object):
         self.base_api = config.get('base_api')
         self.session = requests.Session()
         self.email_user_dict = {}
+        self.email_login_dict = {}
 
     def run(self, from_time):
         print("Git commit log collect: start")
@@ -94,7 +95,7 @@ class GitCommitLog(object):
             self.getCommitWhiteBox(default_branch_repos, 'default')  # 只是获取默认分支commit
             self.getCommitWhiteBox(all_branch_repos)  # 获取全部分支commit
         elif self.upstream_yaml:  # upstream 指定仓库
-            self.email_orgs_dict, self.domain_orgs_dict, self.email_user_dict = self.getUpstreamCompany(
+            self.email_orgs_dict, self.domain_orgs_dict, self.email_user_dict, self.email_login_dict = self.getUpstreamCompany(
                 user_file=self.user_file, company_yaml=self.company_yaml)
             all_branch_repos, default_branch_repos = self.getReposFromYaml(yaml_file=self.upstream_yaml)
             self.getCommitWhiteBox(default_branch_repos, 'default')  # 只是获取默认分支commit
@@ -277,6 +278,10 @@ class GitCommitLog(object):
             unified_user = commit.author.name
             if self.email_user_dict and email in self.email_user_dict:
                 unified_user = self.email_user_dict[email]
+            
+            user_login = ''
+            if self.email_login_dict and email in self.email_login_dict:
+                user_login = self.email_login_dict[email]
 
             sigs = ['No-SIG']
             owner_repo = '%s/%s' % (owner, repo_name)
@@ -306,7 +311,8 @@ class GitCommitLog(object):
                 'platform': platform,
                 'commit_url': repo_url + '/commit/' + commit.hexsha,
                 'is_merge': is_merge,
-                'unified_user': unified_user
+                'unified_user': unified_user,
+                'user_login': user_login
             }
 
             # 协作者信息
@@ -378,7 +384,7 @@ class GitCommitLog(object):
                                 {
                                     "query_string": {
                                         "analyze_wildcard": true,
-                                        "query": "email.keyword:\\"%s\\" AND !tag_user_company.keyword:%s"
+                                        "query": "email.keyword:\\"%s\\" AND !tag_user_company.keyword:\\"%s\\""
                                     }
                                 }
                             ]
@@ -576,6 +582,7 @@ class GitCommitLog(object):
         email_org_dict = {}
         domain_org_dict = {}
         email_user_dict = {}
+        email_login_dict = {}
         try:
             domain_org_dict, aliases_company_dict = self.get_domain_org(company_yaml)
 
@@ -595,10 +602,12 @@ class GitCommitLog(object):
                 for email in user['emails']:
                     email_org_dict.update({email: user_companies})
                     email_user_dict.update({email: user.get('user_name')})
+                    if not email_login_dict.get(email):
+                        email_login_dict.update({email: user.get('github_id')})
 
-            return email_org_dict, domain_org_dict, email_user_dict
+            return email_org_dict, domain_org_dict, email_user_dict, email_login_dict
         except Exception:
-            return email_org_dict, domain_org_dict, email_user_dict
+            return email_org_dict, domain_org_dict, email_user_dict, email_login_dict
 
     def get_domain_org(self, company_yaml):
         domain_org_dict = {}
