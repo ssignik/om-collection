@@ -335,9 +335,7 @@ class ESClient(object):
                 }
             else:
                 url = self.getSearchUrl(index_name=self.sig_index)
-                _headers = {
-                    'Content-Type': 'application/json',
-                }
+                _headers = self.default_headers
             res = self.request_get(url, data=search, headers=_headers)
             if res.status_code != 200:
                 print("The index not exist")

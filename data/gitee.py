@@ -116,6 +116,9 @@ class Gitee(object):
         print("Collect gitee data: staring")
         repo_sigs_dict = self.esClient.getRepoSigs()
         self.repo_sigs_dict = self.get_dict_key_lower(repo_sigs_dict)
+        if len(repo_sigs_dict) > 0:
+            change_repo_sig_dic = self.get_change_repo_sig_dict(repo_sigs_dict)
+            self.esClient.tagRepoSigChanged(change_repo_sig_dic)
         self.getGiteeId2Company()
 
         self.getEnterpriseUser()
@@ -163,8 +166,6 @@ class Gitee(object):
             if self.is_set_sigs_star == 'true':
                 self.getSartUsersList()
 
-            change_repo_sig_dic = self.get_change_repo_sig_dict(repo_sigs_dict)
-            self.esClient.tagRepoSigChanged(change_repo_sig_dic)
         endTime = time.time()
         spent_time = time.strftime("%H:%M:%S",
                                    time.gmtime(endTime - startTime))
@@ -178,7 +179,7 @@ class Gitee(object):
 
             sig_names = ['No-SIG']
             if repo.lower() in self.repo_sigs_dict:
-                sig_names = self.repo_sigs_dict.get(repo.lower)
+                sig_names = self.repo_sigs_dict.get(repo.lower())
 
             if 'opengauss' in self.orgs:
                 sig_names = self.get_repo_sig('opengauss', repo)
