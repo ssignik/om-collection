@@ -66,6 +66,16 @@ class ReleaseRepo(object):
             for repo in repo_info:
                 repo_name = repo.get('name')
                 repos.append(repo_name)
+        
+        if not repos:
+            repo_path = os.path.join(root, version, 'pckg-mgmt.yaml')
+            if not os.path.exists(repo_path):
+                return repos
+            repo_info = yaml.safe_load(open(repo_path)).get('packages', {}).get('natural', [])
+            for repo in repo_info:
+                repo_name = repo.get('name')
+                repos.append(repo_name)
+
         return list(set(repos))
 
     @staticmethod

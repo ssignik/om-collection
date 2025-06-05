@@ -13,6 +13,7 @@
 # Create: 2020-05
 #
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import datetime
 import hashlib
 import json
@@ -62,6 +63,7 @@ class CodeStatistics(object):
         self.company_aliases_yaml_path = config.get('company_aliases_yaml_path')
         self.time_now = ''
         self.version_org = config.get('version_org')
+        self.thread_pool_num = int(config.get('thread_pool_num', 10))
 
         self.github_access_token = config.get('github_access_token')
         self.gitee_access_token = config.get('gitee_access_token')
@@ -105,17 +107,28 @@ class CodeStatistics(object):
             if self.is_repo_statistic == 'true':
                 # 获取组织下所有的仓库
                 repos = self.get_repos(owner=org)
-                for repo in repos:
-                    repo_info = self.get_base_repo_info(org, repo, repo_sigs_dict, repo_org_dict, repo_company_dict)
-                    self.statistics_code_of_repo(owner=org, repo=repo, repo_info=repo_info)
+                with ThreadPoolExecutor(max_workers=self.thread_pool_num) as executor:
+                    for repo in repos:
+                        executor.submit(
+                            self.thread_repo, org, repo, repo_sigs_dict, repo_org_dict, repo_company_dict)
 
             # 统计每个版本的代码量
             if self.is_version_statistic == 'true' and self.version_org:
-                for repo, branches in repo_versions.items():
-                    repo_info = self.get_base_repo_info(self.version_org, repo, repo_sigs_dict,
-                                                        repo_org_dict, repo_company_dict)
-                    self.statistics_code_of_version(owner=self.version_org, repo=repo,
-                                                    repo_info=repo_info, branches=branches)
+                with ThreadPoolExecutor(max_workers=self.thread_pool_num) as executor:
+                    for repo, branches in repo_versions.items():
+                        executor.submit(self.thread_version, branches, repo,
+                                        repo_sigs_dict, repo_org_dict, repo_company_dict)
+
+    def thread_repo(self, org, repo, repo_sigs_dict, repo_org_dict, repo_company_dict):
+        repo_info = self.get_base_repo_info(
+            org, repo, repo_sigs_dict, repo_org_dict, repo_company_dict)
+        self.statistics_code_of_repo(owner=org, repo=repo, repo_info=repo_info)
+
+    def thread_version(self, branches, repo, repo_sigs_dict, repo_org_dict, repo_company_dict):
+        repo_info = self.get_base_repo_info(self.version_org, repo, repo_sigs_dict,
+                                            repo_org_dict, repo_company_dict)
+        self.statistics_code_of_version(
+            owner=self.version_org, repo=repo, repo_info=repo_info, branches=branches)
 
     def get_base_repo_info(self, org, repo, repo_sigs_dict, repo_org_dict, repo_company_dict):
         org_repo = org + '/' + repo
