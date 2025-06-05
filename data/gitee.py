@@ -14,6 +14,7 @@
 #
 
 
+from concurrent.futures import ThreadPoolExecutor
 import os
 import signal
 from collections import defaultdict
@@ -114,11 +115,17 @@ class Gitee(object):
 
     def run(self, from_time):
         print("Collect gitee data: staring")
+        # 获取最新repo-sig对应表
         repo_sigs_dict = self.esClient.getRepoSigs()
+
+        # 忽略大小写
         self.repo_sigs_dict = self.get_dict_key_lower(repo_sigs_dict)
-        if len(repo_sigs_dict) > 0:
+
+        # repo-sig对应表为空, 跳过更新
+        if not repo_sigs_dict or len(repo_sigs_dict) > 0:
             change_repo_sig_dic = self.get_change_repo_sig_dict(repo_sigs_dict)
             self.esClient.tagRepoSigChanged(change_repo_sig_dic)
+
         self.getGiteeId2Company()
 
         self.getEnterpriseUser()
@@ -253,32 +260,12 @@ class Gitee(object):
                     reposName.append(r['full_name'])
                     func(org, r, from_time)
         else:
-            threads = []
-            for org in self.orgs:
-                repos = self.get_repos(org)
-                reposName = []
-                for r in repos:
-                    reposName.append(r['full_name'])
-                    # func(org, r, from_time)
-                    with self.thread_max_num:
-                        t = threading.Thread(
-                            target=func,
-                            args=(org, r, from_time))
-                    threads.append(t)
-                    t.start()
-
-                    if len(threads) % self.thread_pool_num == 0:
-                        for t in threads:
-                            t.join()
-                        threads = []
-                # if reposName is not None and len(reposName) > 0:
-                #     self.updateRemovedData(reposName, 'repo', [{
-                #         "name": "is_gitee_repo",
-                #         "value": 1,
-                #     }])
-                for t in threads:
-                    t.join()
-                threads = []
+            with ThreadPoolExecutor(max_workers=self.thread_pool_num) as executor:
+                for org in self.orgs:
+                    reposName = []
+                    repos = self.get_repos(org)
+                    for r in repos:
+                        executor.submit(func, org, r, from_time)
 
     def externalUpdateRepo(self):
         if self.is_update_repo_author == 'true':
@@ -793,7 +780,7 @@ class Gitee(object):
 
         # collect pull request
         pull_data = self.getGenerator(
-            client.pulls(state='all', once_update_num_of_pr=once_update_num_of_pr, direction='desc',
+            client.pulls(state='all', once_update_num_of_pr=once_update_num_of_pr, direction='asc',
                          sort='updated', since=from_date))
         print(('collection %d pulls' % (len(pull_data))))
         for x in pull_data:
@@ -809,7 +796,6 @@ class Gitee(object):
             pull_code_diff = self.getGenerator(client.pull_code_diff(pr_number))
             pull_action_logs = self.getGenerator(client.pull_action_logs(pr_number))
             pull_review_comments = self.getGenerator(client.pull_review_comments(pr_number))
-            pull_commits = self.getGenerator(client.pull_commits(pr_number))
 
             codediffadd = 0
             codediffdelete = 0
@@ -830,7 +816,6 @@ class Gitee(object):
             x['codediffadd'] = codediffadd
             x['codediffdelete'] = codediffdelete
             eitem = self.__get_rich_pull(x, merged_item)
-            # actions += self.write_pull_commit_data(pull_commits, eitem, owner, sig_names)
 
             ecomments = self.get_rich_pull_reviews(pull_review_comments, eitem, owner)
             res_comment = self.write_comment_data(ecomments, eitem, sig_names, data_type='pull')
