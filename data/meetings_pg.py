@@ -16,7 +16,7 @@ import requests
 import base64
 import pytz
 from datetime import datetime, timedelta
-from sqlalchemy import create_engine, Column, String, DateTime
+from sqlalchemy import create_engine, Column, String, DateTime, pool
 from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.orm import sessionmaker, Session, declarative_base
 import urllib3
@@ -37,7 +37,14 @@ class PgClient(object):
         self.db_url = f"postgresql+psycopg2://{self.pg_user}:{self.pg_password}@{self.pg_host}/{self.pg_dbname}"
 
         # 初始化数据库引擎和会话工厂
-        self.engine = create_engine(self.db_url)
+        self.engine = create_engine(
+              self.db_url,
+              poolclass=pool.QueuePool,
+              pool_size=5,
+              max_overflow=2,
+              pool_recycle=3600,  # 每小时重建连接，避免超时
+              pool_pre_ping=True  # 自动检测断开连接
+          )
         Base.metadata.create_all(self.engine)
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
 
@@ -147,33 +154,29 @@ class MeetingService:
         """
         批量插入或更新会议数据.
         """
-        session: Session = self.pg_client.get_session()
-        try:
-            for meeting in meetings:
-                session.merge(meeting)
-            # 提交事务
-            session.commit()
-        except Exception as e:
-            session.rollback()
-            print(f"Error bulk upserting users: {e}")
-        finally:
-            session.close()
+        with self.pg_client.get_session() as session:
+            try:
+                for meeting in meetings:
+                    session.merge(meeting)
+                # 提交事务
+                session.commit()
+            except Exception as e:
+                session.rollback()
+                print(f"Error bulk upserting users: {e}")
 
     def bulk_upsert_participants(self, participants):
         """
         批量插入或更新参会者数据.
         """
-        session: Session = self.pg_client.get_session()
-        try:
-            for participant in participants:
-                session.merge(participant)
-            # 提交事务
-            session.commit()
-        except Exception as e:
-            session.rollback()
-            print(f"Error bulk upserting users: {e}")
-        finally:
-            session.close()
+        with self.pg_client.get_session() as session:
+            try:
+                for participant in participants:
+                    session.merge(participant)
+                # 提交事务
+                session.commit()
+            except Exception as e:
+                session.rollback()
+                print(f"Error bulk upserting users: {e}")
 
 # ==========================
 # 第三方接口模拟 (ThirdPart)
@@ -271,4 +274,3 @@ class Meetings(object):
                         participant_arr.append(participant)
                 print(f"fetch meeting {meeting.meeting_id} participants success! count: {len(participant_arr)}")
         self.meeting_service.bulk_upsert_participants(participant_arr)
-
