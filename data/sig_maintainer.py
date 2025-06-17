@@ -511,6 +511,8 @@ class SigMaintainer(object):
                     action.update({'meeting_agenda': []}) 
                     if meeting_agenda:
                         action.update({'meeting_agenda': meeting_agenda})
+                    meeting_url = owners.get('meeting_url')
+                    action.update({'meeting_url': meeting_url})
 
                 except KeyError as e:
                     print('KeyError of %s is null.' % dir)
@@ -547,7 +549,9 @@ class SigMaintainer(object):
                     meeting_agenda = info.get('meeting_agenda')
                     action.update({'meeting_agenda': []}) 
                     if meeting_agenda:
-                        action.update({'meeting_agenda': meeting_agenda})    
+                        action.update({'meeting_agenda': meeting_agenda})
+                    meeting_url = owners.get('meeting_url')
+                    action.update({'meeting_url': meeting_url})
                 except FileNotFoundError:
                     print('sig-info.yaml %s is not exist.' % dir)
 
