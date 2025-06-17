@@ -550,7 +550,7 @@ class SigMaintainer(object):
                     action.update({'meeting_agenda': []}) 
                     if meeting_agenda:
                         action.update({'meeting_agenda': meeting_agenda})
-                    meeting_url = owners.get('meeting_url')
+                    meeting_url = info.get('meeting_url')
                     action.update({'meeting_url': meeting_url})
                 except FileNotFoundError:
                     print('sig-info.yaml %s is not exist.' % dir)
