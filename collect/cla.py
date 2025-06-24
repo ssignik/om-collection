@@ -37,8 +37,8 @@ class ClaClient(object):
         token = token_info['data']['access_token']
         return token
 
-    def fetch_cla(self, method='get', url=None, headers=None, data=None):
-        req = requests.request(method, url=url, data=data, headers=headers, timeout=self.timeout)
+    def fetch_cla(self, method='get', url=None, headers=None, data=None, params=None):
+        req = requests.request(method, url=url, data=data, headers=headers, params=params, timeout=self.timeout)
         if req.status_code != 200:
             print("cla api error: ", req.text)
         res = json.loads(req.text)

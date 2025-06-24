@@ -13,6 +13,7 @@
 # Create: 2020-05
 #
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import datetime
 import hashlib
 import json
@@ -62,6 +63,7 @@ class CodeStatistics(object):
         self.company_aliases_yaml_path = config.get('company_aliases_yaml_path')
         self.time_now = ''
         self.version_org = config.get('version_org')
+        self.thread_pool_num = int(config.get('thread_pool_num', 10))
 
         self.github_access_token = config.get('github_access_token')
         self.gitee_access_token = config.get('gitee_access_token')
@@ -105,17 +107,28 @@ class CodeStatistics(object):
             if self.is_repo_statistic == 'true':
                 # 获取组织下所有的仓库
                 repos = self.get_repos(owner=org)
-                for repo in repos:
-                    repo_info = self.get_base_repo_info(org, repo, repo_sigs_dict, repo_org_dict, repo_company_dict)
-                    self.statistics_code_of_repo(owner=org, repo=repo, repo_info=repo_info)
+                with ThreadPoolExecutor(max_workers=self.thread_pool_num) as executor:
+                    for repo in repos:
+                        executor.submit(
+                            self.thread_repo, org, repo, repo_sigs_dict, repo_org_dict, repo_company_dict)
 
             # 统计每个版本的代码量
             if self.is_version_statistic == 'true' and self.version_org:
-                for repo, branches in repo_versions.items():
-                    repo_info = self.get_base_repo_info(self.version_org, repo, repo_sigs_dict,
-                                                        repo_org_dict, repo_company_dict)
-                    self.statistics_code_of_version(owner=self.version_org, repo=repo,
-                                                    repo_info=repo_info, branches=branches)
+                with ThreadPoolExecutor(max_workers=self.thread_pool_num) as executor:
+                    for repo, branches in repo_versions.items():
+                        executor.submit(self.thread_version, branches, repo,
+                                        repo_sigs_dict, repo_org_dict, repo_company_dict)
+
+    def thread_repo(self, org, repo, repo_sigs_dict, repo_org_dict, repo_company_dict):
+        repo_info = self.get_base_repo_info(
+            org, repo, repo_sigs_dict, repo_org_dict, repo_company_dict)
+        self.statistics_code_of_repo(owner=org, repo=repo, repo_info=repo_info)
+
+    def thread_version(self, branches, repo, repo_sigs_dict, repo_org_dict, repo_company_dict):
+        repo_info = self.get_base_repo_info(self.version_org, repo, repo_sigs_dict,
+                                            repo_org_dict, repo_company_dict)
+        self.statistics_code_of_version(
+            owner=self.version_org, repo=repo, repo_info=repo_info, branches=branches)
 
     def get_base_repo_info(self, org, repo, repo_sigs_dict, repo_org_dict, repo_company_dict):
         org_repo = org + '/' + repo
@@ -164,6 +177,29 @@ class CodeStatistics(object):
                 company_aliases_dict[aliases] = company_cn
         return company_aliases_dict
 
+    def subprocess_run(self, cwd, cmd_args):
+        try:
+            subprocess.run(
+                cmd_args,
+                cwd=cwd,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"Git clean failed: {e.stderr}")
+            return False
+        return True
+    
+    def git_clean(self, repo):
+        try:
+            repo.git.clean('-fdf')
+            return True
+        except Exception as e:
+            print(f"Git clean error: {e}")
+            return False
+    
     def statistics_code_of_version(self, owner, repo, repo_info, branches):
         print('**** statistics_code_of_version start : %s/%s' % (owner, repo))
         action = repo_info.copy()
@@ -178,8 +214,7 @@ class CodeStatistics(object):
             try:
                 print('*** branch : %s' % branch)
                 # 清理未追踪文件
-                cmd_clean = 'cd %s;git clean -f -df -x' % repo_path
-                os.system(cmd_clean)
+                self.git_clean(git_repo)
                 print('*** git clean success ***')
 
                 s_time = datetime.datetime.now()
@@ -203,8 +238,7 @@ class CodeStatistics(object):
                 action['obs_version'] = branch
 
                 # 删除解压文件
-                cmd_clean = 'cd %s;git clean -f -df -x' % repo_path
-                os.system(cmd_clean)
+                self.git_clean(git_repo)
                 print('*** git clean decompress file success ***')
 
                 update_script = "repo_url.keyword: \\\"%s\\\" AND obs_version.keyword:\\\"%s\\\"" % (
@@ -225,8 +259,7 @@ class CodeStatistics(object):
             except Exception:
                 traceback.print_exc()
                 # 删除解压文件
-                cmd_clean = 'cd %s;git clean -f -df -x' % repo_path
-                os.system(cmd_clean)
+                self.git_clean(git_repo)
                 print('*** git clean when statistics fail ***')
                 print('*** statistics_code_of_version fail : %s/%s' % (owner, repo))
                 continue
@@ -251,8 +284,7 @@ class CodeStatistics(object):
                 return
 
             # 清理未追踪文件
-            cmd_clean = 'cd %s;git clean -f -df -x' % repo_path
-            os.system(cmd_clean)
+            self.git_clean(git_repo)
             print('*** git clean success ***')
 
             self.get_pull_branch(git_repo, repo_path, default_branch)
@@ -288,8 +320,7 @@ class CodeStatistics(object):
         except Exception:
             traceback.print_exc()
             # 清理未追踪文件
-            cmd_clean = 'cd %s;git clean -f -df -x' % repo_path
-            os.system(cmd_clean)
+            self.git_clean(git_repo)
             print('*** git clean when statistics fail ***')
             print('**** statistics_code_of_repo fail : %s/%s' % (owner, repo))
             return
@@ -323,8 +354,7 @@ class CodeStatistics(object):
         if not os.path.exists(code_path):
             if clone_url is None:
                 return
-            cmd_clone = 'cd %s;git clone --depth 1 %s' % (owner_path, clone_url + '.git')
-            os.system(cmd_clone)
+            self.subprocess_run(owner_path, ['git', 'clone', '--depth 1', clone_url + '.git'])
 
         return code_path
 
@@ -380,9 +410,8 @@ class CodeStatistics(object):
     def decompress(self, path):
         root, dirs, files = os.walk(path).__next__()
 
-        temp_path = '%s/decompress_temp' % path
-        cmd_tar = 'cd %s;mkdir decompress_temp' % path
-        os.system(cmd_tar)
+        temp_path = f'{path}/decompress_temp'
+        self.subprocess_run(path, ['mkdir', 'decompress_temp'])
 
         def check_tar_file(s):
             return s.endswith(".tar.gz") or s.endswith(".tar.xz") or s.endswith(".tar.bz2") \
@@ -399,24 +428,21 @@ class CodeStatistics(object):
         for file in tar_files:
             cmd_cp = 'cp %s/%s %s' % (path, file, temp_path)
             os.system(cmd_cp)
-            cmd_tar = 'cd %s;tar -xf %s' % (temp_path, file)
-            os.system(cmd_tar)
+            self.subprocess_run(temp_path, ['tar', '-xf', file])
             print('*** decompress tar file : %s/%s' % (temp_path, file))
 
         zip_files = list(filter(check_zip_file, files))
         for file in zip_files:
             cmd_cp = 'cp %s/%s %s' % (path, file, temp_path)
             os.system(cmd_cp)
-            cmd_tar = 'cd %s;unzip -o %s' % (temp_path, file)
-            os.system(cmd_tar)
+            self.subprocess_run(temp_path, ['unzip', '-o', file])
             print('*** decompress zip file : %s/%s' % (temp_path, file))
 
         gz_files = list(filter(check_gz_file, files))
         for file in gz_files:
             cmd_cp = 'cp %s/%s %s' % (path, file, temp_path)
             os.system(cmd_cp)
-            cmd_tar = 'cd %s;gzip -d %s' % (temp_path, file)
-            os.system(cmd_tar)
+            self.subprocess_run(temp_path, ['gzip', '-d', file])
             print('*** decompress gz file : %s/%s' % (temp_path, file))
 
     # 标记数据是否是最近更新

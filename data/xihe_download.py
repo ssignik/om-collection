@@ -32,7 +32,7 @@ class XiheDown(object):
 
         self.esClient = ESClient(config)
         self.session = requests.Session()
-        self.headers = {'Content-Type': 'application/json'}
+        self.headers = {'Content-Type': 'application/json', 'XIHE-TOKEN': config.get('xihe-token')}
         self.retry_cnt = 0
 
     def run(self, start=None):
