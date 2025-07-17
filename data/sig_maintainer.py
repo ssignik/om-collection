@@ -520,6 +520,8 @@ class SigMaintainer(object):
                         action.update({'description': info['description']})
                     if 'mentors' in info and info['mentors'] is not None:
                         action.update({'mentors': info['mentors']})
+                    if 'mentors' in info and info['mentors'] is not None:
+                        action.update({'mentors': info['mentors']})
 
                     mailing_list = self.get_mailing_list(dir, info)
                     action.update({'mailing_list': mailing_list})
