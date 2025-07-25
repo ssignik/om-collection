@@ -39,7 +39,11 @@ GITCODE_BASE = "gitcode.com"
 HUGGINGFACE_BASE = "huggingface.co"
 CODEARTS_BASE = "codehub.devcloud.cn-southwest-2.huaweicloud.com"  # codearts域名
 DEFAULT_BRANCH_HEAD = "  origin/HEAD ->"
-
+# 测试文件名匹配正则
+TEST_FILE_PATTERN = re.compile(
+    r'(?:^|/)(test_.+|.+_test|Test.+|test|.+test|.+Test|.+Tests)\.(py|java|js|ts|c|cpp|cc|go|rs|rb|php|cs)$',
+    re.IGNORECASE
+)
 
 class GitCommitLog(object):
     def __init__(self, config=None):
@@ -231,12 +235,12 @@ class GitCommitLog(object):
             merge_commits = list(
                 repo.iter_commits(since=self.start_date, until=self.end_date, author=self.user_commit_name,
                                   merges=True))
-            self.parse_commits(merge_commits, platform, owner, branch_name, remote_repo, 1, default_branch, repo_name)
+            self.parse_commits(merge_commits, platform, owner, branch_name, remote_repo, 1, default_branch, repo_name,repo)
             no_merge_commits = list(
                 repo.iter_commits(since=self.start_date, until=self.end_date, author=self.user_commit_name,
                                   no_merges=True))
             self.parse_commits(no_merge_commits, platform, owner, branch_name, remote_repo, 0, default_branch,
-                               repo_name)
+                               repo_name,repo)
         else:
             # 遍历所有分支，获取数据
             for branch in branchs:
@@ -251,15 +255,15 @@ class GitCommitLog(object):
                     repo.iter_commits(since=self.start_date, until=self.end_date, author=self.user_commit_name,
                                       merges=True))
                 self.parse_commits(merge_commits, platform, owner, branch_name, remote_repo, 1, default_branch,
-                                   repo_name)
+                                   repo_name,repo)
                 no_merge_commits = list(
                     repo.iter_commits(since=self.start_date, until=self.end_date, author=self.user_commit_name,
                                       no_merges=True))
                 self.parse_commits(no_merge_commits, platform, owner, branch_name, remote_repo, 0, default_branch,
-                                   repo_name)
+                                   repo_name,repo)
 
     # 数据解析
-    def parse_commits(self, commits, platform, owner, branch, repo_url, is_merge, default_branch, repo_name):
+    def parse_commits(self, commits, platform, owner, branch, repo_url, is_merge, default_branch, repo_name,repo=None):
         is_default_branch = 0
         if branch == default_branch:
             is_default_branch = 1
@@ -334,6 +338,13 @@ class GitCommitLog(object):
             if commit_reviewers:
                 action['commit_reviewers'] = commit_reviewers
                 action['commit_reviewer_emails'] = commit_reviewer_emails
+            test_code_additions = 0
+            try:
+                test_code_additions = self.get_test_code_additions(repo, commit.hexsha)
+            except Exception as e:
+                print(f"Error counting test code additions for commit {commit.hexsha}: {e}")
+            # 将结果加入 action 字典
+            action['test_add'] = test_code_additions
 
             id_str = action['commit_url'] + '-' + branch
             index_id = hashlib.md5(id_str.encode('utf-8')).hexdigest()
@@ -349,6 +360,42 @@ class GitCommitLog(object):
                 count = 0
                 actions = ''
         self.esClient.safe_put_bulk(actions)
+
+
+    # 判断是否是测试文件
+    def is_test_file(self,filename):
+        return TEST_FILE_PATTERN.match(filename) is not None
+
+    # 统计 diff 中的新增行数（+ 行）
+    def count_test_code_additions(self,diff_text):
+        added_lines = 0
+        for line in diff_text.splitlines():
+            if line.startswith('+') and not line.startswith('+++'):
+                added_lines += 1
+        return added_lines
+
+    # 获取某个 commit 中测试代码新增行数
+    def get_test_code_additions(self,repo, commit_hexsha):
+        # 获取 diff 内容
+        diff_output = repo.git.diff(commit_hexsha + "^!")
+
+        # 提取测试文件的 diff 内容
+        test_diff = ""
+        lines = diff_output.splitlines(keepends=True)
+        in_test_file = False
+
+        for line in lines:
+            if line.startswith("diff --git"):
+                # 提取文件名
+                parts = line.split(" b/")
+                if len(parts) < 2:
+                    continue
+                filename = parts[1].strip()
+                in_test_file = self.is_test_file(filename)
+            if in_test_file:
+                test_diff += line
+
+        return self.count_test_code_additions(test_diff)
 
     def git_operation_repo(self, operation, cwd, url=None):
         git_cmd = ['git', operation]

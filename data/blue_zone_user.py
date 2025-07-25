@@ -425,6 +425,7 @@ class BlueZoneUser(object):
                 'file_changed': source['file_changed'],
                 'is_commit': 1,
             }
+            repo_data.update({"test_add":source.get("test_add",0)})
             repo_data.update(self.user)
             id = str(source['repo']) + 'commit' + str(source['commit_id'])
             index_id = hashlib.md5(id.encode('utf-8')).hexdigest()

@@ -501,6 +501,10 @@ class SigMaintainer(object):
                 owners = yaml.load_all(open(owner_file), Loader=yaml.Loader).__next__()
                 try:
                     maintainers = owners.get('maintainers')
+                    if 'meeting_agenda' not in owners:
+                        action.update({'meeting_agenda': owners.get("meeting_agenda")})
+                    if 'discuss_url' not in owners:
+                        action.update({'discuss_url': owners.get("discuss_url")})
                     action.update({'maintainers': maintainers})
                     action.update({'maintainer_info': self.attach_user_info(maintainers)})
                     committers = owners.get('committers')
@@ -520,9 +524,10 @@ class SigMaintainer(object):
                         action.update({'description': info['description']})
                     if 'mentors' in info and info['mentors'] is not None:
                         action.update({'mentors': info['mentors']})
-                    if 'mentors' in info and info['mentors'] is not None:
-                        action.update({'mentors': info['mentors']})
-
+                    if 'meeting_agenda' not in info:
+                        action.update({'meeting_agenda': info.get("meeting_agenda")})
+                    if 'discuss_url' not in info:
+                        action.update({'discuss_url': info.get("discuss_url")})
                     mailing_list = self.get_mailing_list(dir, info)
                     action.update({'mailing_list': mailing_list})
 
