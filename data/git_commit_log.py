@@ -41,7 +41,20 @@ CODEARTS_BASE = "codehub.devcloud.cn-southwest-2.huaweicloud.com"  # codearts域
 DEFAULT_BRANCH_HEAD = "  origin/HEAD ->"
 # 测试文件名匹配正则
 TEST_FILE_PATTERN = re.compile(
-    r'(?:^|/)(test_.+|.+_test|Test.+|test|.+test|.+Test|.+Tests)\.(py|java|js|ts|c|cpp|cc|go|rs|rb|php|cs)$',
+    r'(?:^|[/\\])'
+    r'(?:.*[/\\](?:tests?|gtest|dtfuzz)[/\\])?'
+    r'(?:'
+    r'test_.+|'
+    r'.+_test|'
+    r'Test.+|'
+    r'test|'
+    r'.+test|'
+    r'.+Test|'
+    r'.+Tests|'
+    r'[a-zA-Z0-9_]+test|'
+    r'[a-zA-Z0-9_]+Test'
+    r')'
+    r'\.(py|java|js|ts|c|cpp|cc|go|rs|rb|php|cs)$',
     re.IGNORECASE
 )
 
