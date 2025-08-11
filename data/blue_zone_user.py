@@ -378,7 +378,8 @@ class BlueZoneUser(object):
                               "file_changed",
                               "repo",
                               "commit_id",
-                              "email"
+                              "email",
+                              "test_add"
                             ]
                           },
                           "query": {
