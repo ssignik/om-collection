@@ -157,7 +157,7 @@ class SigMaintainer(object):
         for sig in dirs:
             repo_path_dir = os.path.join(self.sigs_dirs_path, sig, 'repo-info.yaml')
             try:
-                repo_info = yaml.load_all(open(repo_path_dir), Loader=yaml.Loader).__next__()
+                repo_info = yaml.load_all(open(repo_path_dir), Loader=yaml.BaseLoader).__next__()
                 sig_repo_list = []
                 for repo in repo_info:
                     sig_repo_list.append(self.org + '/' + repo['name'])
@@ -176,7 +176,7 @@ class SigMaintainer(object):
             for file in files:
                 yaml_path = os.path.join(root, file)
                 try:
-                    name = yaml.load_all(open(yaml_path), Loader=yaml.Loader).__next__()['name']
+                    name = yaml.load_all(open(yaml_path), Loader=yaml.BaseLoader).__next__()['name']
                     repo_name = f"{org}/{name}"
                     sig_repo_list.append(repo_name)
                 except (yaml.YAMLError, IOError) as e:
@@ -185,7 +185,7 @@ class SigMaintainer(object):
 
     def get_sig_repos_opengauss(self):
         sig_yaml_path = self.sigs_dir + self.sig_repo_name + '/sigs.yaml'
-        data = yaml.load_all(open(sig_yaml_path), Loader=yaml.Loader).__next__()['sigs']
+        data = yaml.load_all(open(sig_yaml_path), Loader=yaml.BaseLoader).__next__()['sigs']
         sig_repos_dict = {}
         for d in data:
             repos = d['repositories']
@@ -397,7 +397,7 @@ class SigMaintainer(object):
             try:
                 repo_path = self.sigs_dirs_path + '/' + dir
                 owner_file = repo_path + '/' + 'OWNERS'
-                owner_logins = yaml.load_all(open(owner_file), Loader=yaml.Loader).__next__()
+                owner_logins = yaml.load_all(open(owner_file), Loader=yaml.BaseLoader).__next__()
                 times = self.get_readme_log(repo_path)
                 rs = self.get_owner_log(repo_path)
                 datas = ''
@@ -446,7 +446,7 @@ class SigMaintainer(object):
                 try:
                     repo_committer_dic = {}
                     sig_info = self.sigs_dirs_path + '/' + dir + '/' + 'sig-info.yaml'
-                    info = yaml.load_all(open(sig_info), Loader=yaml.Loader).__next__()
+                    info = yaml.load_all(open(sig_info), Loader=yaml.BaseLoader).__next__()
                     if info.get('repositories'):
                         committers, repo_committer_dic = self.get_repo_committer_from_yaml(info)
                     else:
@@ -498,7 +498,7 @@ class SigMaintainer(object):
             try:
                 # get maintainers
                 owner_file = self.sigs_dirs_path + '/' + dir + '/' + 'OWNERS'
-                owners = yaml.load_all(open(owner_file), Loader=yaml.Loader).__next__()
+                owners = yaml.load_all(open(owner_file), Loader=yaml.BaseLoader).__next__()
                 try:
                     maintainers = owners.get('maintainers')
                     if 'meeting_agenda' not in owners:
@@ -517,7 +517,7 @@ class SigMaintainer(object):
                 print('owner file of %s is not exist. using sig-info.yaml.' % dir)
                 try:
                     sig_info = self.sigs_dirs_path + '/' + dir + '/' + 'sig-info.yaml'
-                    info = yaml.load_all(open(sig_info), Loader=yaml.Loader).__next__()
+                    info = yaml.load_all(open(sig_info), Loader=yaml.BaseLoader).__next__()
                     for key, value in info.items():
                         action[key] = value
                     if 'description' in info and info['description'] is not None:
@@ -591,7 +591,7 @@ class SigMaintainer(object):
     def get_gauss_sig_label(self):
         if self.sig_label_path is None:
             return {}
-        data = yaml.load_all(open(self.sig_label_path), Loader=yaml.Loader).__next__().get('sigs')
+        data = yaml.load_all(open(self.sig_label_path), Loader=yaml.BaseLoader).__next__().get('sigs')
         sig_label_dict = {}
         for d in data:
             name = d.get('name')
@@ -614,7 +614,7 @@ class SigMaintainer(object):
                 self.sig_mail_dict.update({sig: maillist})
         elif self.org == 'opengauss':
             try:
-                res = yaml.load_all(open(self.maillist_path), Loader=yaml.Loader).__next__()
+                res = yaml.load_all(open(self.maillist_path), Loader=yaml.BaseLoader).__next__()
                 for key, val in res.items():
                     self.sig_mail_dict.update({key: val})
             except FileNotFoundError:

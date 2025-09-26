@@ -16,6 +16,7 @@
 
 import logging
 import os
+import pathlib
 import time
 from configparser import ConfigParser
 
@@ -125,7 +126,6 @@ class George:
         self.sections = self.config.sections()
         self.from_data = self.config.get('general', 'from_data')
         self.sleep_time = self.config.getint('general', 'sleep_time')
-        self.delete_config()
 
     def start(self):
         logger.info("----------------------------")
@@ -137,6 +137,8 @@ class George:
             if backend in BACKEND_MAPPING:
                 driver = import_object(BACKEND_MAPPING[backend], self.getBackendConfig(backend))
                 drivers.append(driver)
+
+        self.delete_config()
 
         starTime = self.from_data
         while True:
@@ -167,6 +169,9 @@ class George:
     def delete_config(self):
         try:
             os.remove(self.config_path)
+            check_path = os.path.join(self.config_dir, "healthcheck")
+            if not os.path.exists(check_path):
+                pathlib.Path(check_path).touch()
             print(f"文件 '{self.config_path}' 删除成功")
         except Exception as e:
             print(f"删除文件时出错: {self.config_path}", e)
