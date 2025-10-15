@@ -108,7 +108,7 @@ def get_meeting_model(table_name):
                 sig_name=json_data.get('group_name'),
                 community=json_data.get('community'),
                 topic=json_data.get('topic'),
-                created_at=datetime.strptime(json_data.get('date'), '%Y-%m-%d'),
+                created_at=datetime.strptime(json_data.get('date'), '%Y-%m-%d') if json_data.get('date') else None,
                 start=json_data.get('start'),
                 end=json_data.get('end'),
                 etherpad=json_data.get('etherpad'),
