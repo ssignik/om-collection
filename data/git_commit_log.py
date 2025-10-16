@@ -102,10 +102,11 @@ class GitCommitLog(object):
             self.email_orgs_dict, self.domain_orgs_dict, self.email_user_dict, self.email_login_dict = self.get_upstream_from_yaml(
                 company_yaml=self.company_yaml, user_file=self.user_file)
             if self.email_orgs_dict and self.domain_orgs_dict and self.email_user_dict and self.email_login_dict:
+                self.update_company_changed()
+                self.update_userinfo_changed()
                 all_branch_repos, default_branch_repos = self.getReposFromYaml(yaml_file=self.upstream_yaml)
                 self.getCommitWhiteBox(default_branch_repos, 'default')  # 只是获取默认分支commit
                 self.getCommitWhiteBox(all_branch_repos)  # 获取全部分支commit
-                self.update_company_changed()
         elif self.model_repo_yaml:  # 大模型指定仓库
             self.domain_orgs_dict, aliases_company_dict = self.get_domain_org(company_yaml=self.company_yaml)
             all_branch_repos, default_branch_repos = self.getReposFromYaml(yaml_file=self.model_repo_yaml)
@@ -489,6 +490,31 @@ class GitCommitLog(object):
                     }
                 }''' % (company, start_date, end_date, email, company)
                 start_date = end_date
+                self.esClient.updateByQuery(query=query.encode('utf-8'))
+
+    def update_userinfo_changed(self):
+        self.update_user_field('user_login', self.email_login_dict)
+        self.update_user_field('unified_user', self.email_user_dict)
+
+    def update_user_field(self, field, user_dict):
+        for email, user_login in user_dict.items():
+                query = '''{
+                    "script": {
+                        "source": "ctx._source['%s']='%s'"
+                    },
+                    "query": {
+                        "bool": {
+                            "filter": [
+                                {
+                                    "query_string": {
+                                        "analyze_wildcard": true,
+                                        "query": "email.keyword:\\"%s\\" AND !%s.keyword:\\"%s\\""
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }''' % (field, user_login, email, field, user_login)
                 self.esClient.updateByQuery(query=query.encode('utf-8'))
 
     def remove_deleted_branch(self, repo):
