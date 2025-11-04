@@ -1221,7 +1221,9 @@ class Gitee(object):
         # rich_pr['issue_url'] = pull_request['html_url']
 
         labels = []
-        [labels.append(label['name']) for label in pull_request['labels'] if 'labels' in pull_request]
+        for label in pull_request.get('labels', []):
+            if isinstance(label, dict) and 'name' in label:
+                labels.append(label['name'])
         rich_pr['pull_labels'] = labels
         rich_pr['tag_sig_names'] = self.get_tag_sig(labels)
 
