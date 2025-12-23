@@ -41,21 +41,14 @@ CODEARTS_BASE = "codehub.devcloud.cn-southwest-2.huaweicloud.com"  # codearts域
 DEFAULT_BRANCH_HEAD = "  origin/HEAD ->"
 # 测试文件名匹配正则
 TEST_FILE_PATTERN = re.compile(
-    r'(?:^|[/\\])'
-    r'(?:.*[/\\](?:tests?|gtest|dtfuzz)[/\\])?'
-    r'(?:'
-    r'test_.+|'
-    r'.+_test|'
-    r'Test.+|'
-    r'test|'
-    r'.+test|'
-    r'.+Test|'
-    r'.+Tests|'
-    r'[a-zA-Z0-9_]+test|'
-    r'[a-zA-Z0-9_]+Test'
-    r')'
-    r'\.(py|java|js|ts|c|cpp|cc|go|rs|rb|php|cs)$',
-    re.IGNORECASE
+    r"(?:^|[/\\])"
+    r"(?:"
+        r"test"
+        r"|.*[-_\w]test"
+    r")"
+    r"[^/\\]*"
+    r"\.(py|java|js|ts|c|cpp|cc|go|rs|rb|php|cs|jmx|sh|h)$",
+    re.IGNORECASE,
 )
 
 class GitCommitLog(object):
@@ -377,8 +370,8 @@ class GitCommitLog(object):
 
 
     # 判断是否是测试文件
-    def is_test_file(self,filename):
-        return TEST_FILE_PATTERN.match(filename) is not None
+    def is_test_file(self, filename):
+        return TEST_FILE_PATTERN.search(filename) is not None
 
     # 统计 diff 中的新增行数（+ 行）
     def count_test_code_additions(self,diff_text):
@@ -389,27 +382,35 @@ class GitCommitLog(object):
         return added_lines
 
     # 获取某个 commit 中测试代码新增行数
-    def get_test_code_additions(self,repo, commit_hexsha):
-        # 获取 diff 内容
-        diff_output = repo.git.diff(commit_hexsha + "^!")
+    def get_test_code_additions(self, repo, commit_hexsha):
+        """
+        统计指定 commit 中所有测试文件的新增代码行数（不包括删除行）。
+        使用 `git diff --numstat` 避免手动解析 diff 内容，更准确高效。
+        """
+        try:
+            # 获取该 commit 相对于其父提交的变更统计
+            # 对于初始提交（无父），Git 会自动处理为与空树比较
+            stats_output = repo.git.show(
+                commit_hexsha, 
+                "--numstat"
+            )
+        except Exception:
+            # 处理初始提交（root commit）：没有父提交
+            return 0
 
-        # 提取测试文件的 diff 内容
-        test_diff = ""
-        lines = diff_output.splitlines(keepends=True)
-        in_test_file = False
+        total_additions = 0
+        for line in stats_output.strip().splitlines():
+            parts = line.split('\t')
+            if len(parts) < 3:
+                continue
+            added, deleted, filepath = parts
+            # 跳过二进制文件（Git 用 '-' 表示）
+            if added == '-' or deleted == '-':
+                continue
+            if self.is_test_file(filepath):
+                total_additions += int(added)
 
-        for line in lines:
-            if line.startswith("diff --git"):
-                # 提取文件名
-                parts = line.split(" b/")
-                if len(parts) < 2:
-                    continue
-                filename = parts[1].strip()
-                in_test_file = self.is_test_file(filename)
-            if in_test_file:
-                test_diff += line
-
-        return self.count_test_code_additions(test_diff)
+        return total_additions
 
     def git_operation_repo(self, operation, cwd, url=None):
         git_cmd = ['git', operation]
