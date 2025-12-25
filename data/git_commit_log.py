@@ -44,7 +44,7 @@ TEST_FILE_PATTERN = re.compile(
     r"(?:^|[/\\])"
     r"(?:"
         r"test"
-        r"|.*[-_\w]test"
+        r"|.*[-_\w]test"   # ← 修改这里：加入 -
     r")"
     r"[^/\\]*"
     r"\.(py|java|js|ts|c|cpp|cc|go|rs|rb|php|cs|jmx|sh|h)$",
@@ -194,9 +194,9 @@ class GitCommitLog(object):
             remote_repo = 'https://%s/%s' % (HUGGINGFACE_BASE, path)
             clone_url = 'https://%s:%s@%s/%s' % (
                 username, self.huggingface_access_token, HUGGINGFACE_BASE, path)
-        elif platform in CODEARTS_BASE:  # CodeArts的URL构造
-            remote_repo = f"https://{CODEARTS_BASE}/{owner}/{repo_name}"
-            clone_url = f"https://{username}:{self.codearts_password}@{CODEARTS_BASE}/{owner}/{repo_name}"
+        elif  platform.startswith():  # CodeArts的URL构造
+            remote_repo = f"https://{platform}/{owner}/{repo_name}"
+            clone_url = f"https://{username}:{self.codearts_password}@{platform}/{owner}/{repo_name}"
         else:
             remote_repo = None
             clone_url = None
@@ -370,7 +370,7 @@ class GitCommitLog(object):
 
 
     # 判断是否是测试文件
-    def is_test_file(self, filename):
+    def is_test_file(self,filename):
         return TEST_FILE_PATTERN.search(filename) is not None
 
     # 统计 diff 中的新增行数（+ 行）
@@ -757,6 +757,8 @@ class GitCommitLog(object):
                 repo_name = '/'.join(items[4::])
                 branch_name = branch
                 path = '/'.join(items[3::])
+                if items[2].startswith("codehub.devcloud.cn"):
+                    platform = items[2]
                 executor.submit(self.getLog, platform, owner,
                                 repo_name, branch_name, path)
 
