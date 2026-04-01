@@ -54,6 +54,14 @@ class PgClient(object):
         """
         return self.SessionLocal()
 
+    def refresh_pool(self):
+        """
+        刷新连接池，关闭所有旧连接，用于长时间等待后重新建立连接.
+        在程序长时间sleep后，SSL连接可能被服务器关闭，需要刷新连接池。
+        """
+        self.engine.dispose()  # 关闭所有连接池中的连接
+        # 下次使用时会自动创建新连接
+
 # ==========================
 # 数据库模型 (Model)
 # ==========================
@@ -240,6 +248,8 @@ class Meetings(object):
 
     def run(self, from_time):
         print("*** Meetings collection start ***")
+        # 刷新连接池，避免长时间sleep后SSL连接被关闭
+        self.pg_client.refresh_pool()
         self.fetch_meeting(from_time)
 
     def fetch_meeting(self, from_time=None):
