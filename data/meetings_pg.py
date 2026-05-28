@@ -249,6 +249,7 @@ class Meetings(object):
             if meeting_json.get('data', []):
                 for obj in meeting_json['data']:
                     meeting = self.MeetingInfo.from_json(obj)
+                    print(f"[DEBUG] meeting_id={meeting.meeting_id}, is_removed={meeting.is_removed!r}, raw_is_delete={obj.get('is_delete')!r}")
                     meeting_arr.append(meeting)
                 self.meeting_service.bulk_upsert_meeting(meeting_arr)
             if meeting_arr:
@@ -261,9 +262,12 @@ class Meetings(object):
         for meeting in meetings:
             if meeting.is_removed is None:
                 participants_json = self.meeting_api.fetch_participants(meeting.meeting_id, meeting.community)
+                print(f"[DEBUG] meeting_id={meeting.meeting_id}, mid={meeting.mid}, participants_response={participants_json}")
                 if participants_json.get('data', []) :
                     for name in participants_json['data']:
                         participant = self.Participants.from_meeting(meeting.meeting_id, name)
                         participant_arr.append(participant)
                 print(f"fetch meeting {meeting.meeting_id} participants success! count: {len(participant_arr)}")
+            else:
+                print(f"[DEBUG] SKIPPED meeting_id={meeting.meeting_id} because is_removed={meeting.is_removed!r}")
         self.meeting_service.bulk_upsert_participants(participant_arr)
