@@ -17,7 +17,6 @@ import base64
 import pytz
 from datetime import datetime, timedelta
 from sqlalchemy import create_engine, Column, String, DateTime, pool
-from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.orm import sessionmaker, Session, declarative_base
 import urllib3
 urllib3.disable_warnings()
@@ -67,24 +66,8 @@ class PgClient(object):
 # ==========================
 Base = declarative_base()
 
-class DynamicTableMixin:
-    """
-    动态表名混入类，用于动态设置表名.
-    """
-    _table_name = None  # 默认表名
-
-    @classmethod
-    def set_tablename(cls, table_name):
-        cls._table_name = table_name
-
-    @declared_attr
-    def __tablename__(cls):
-        if cls._table_name is None:
-            raise ValueError(f"Table name for {cls.__name__} has not been set.")
-        return cls._table_name
-
 def get_meeting_model(table_name):
-    class MeetingInfo(Base, DynamicTableMixin):
+    class MeetingInfo(Base):
         __tablename__ = table_name
         uuid = Column(String,primary_key=True,index=True)
         meeting_id = Column(String,nullable=False)
@@ -131,7 +114,7 @@ def get_meeting_model(table_name):
     return MeetingInfo
 
 def get_participant_model(table_name):
-    class Participants(Base, DynamicTableMixin):
+    class Participants(Base):
         __tablename__ = table_name
         uuid = Column(String, primary_key=True, index=True)
         meeting_id = Column(String, nullable=False)
