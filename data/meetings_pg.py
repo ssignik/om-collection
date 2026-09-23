@@ -14,6 +14,7 @@
 #
 import requests
 import base64
+import json
 import pytz
 from datetime import datetime, timedelta
 from sqlalchemy import create_engine, Column, String, DateTime, pool
@@ -201,7 +202,9 @@ class MeetingApi:
         }
         response = requests.get(url, headers=headers, verify=False)
         if response.status_code == 200:
-            return response.json()  # 假设返回的是 JSON 格式的订单数据
+            resp_json = response.json()
+            print(f"[DEBUG] api response url={url}, body={json.dumps(resp_json, ensure_ascii=False)}")
+            return resp_json  # 假设返回的是 JSON 格式的订单数据
         else:
             raise Exception(f"Failed to fetch meetings: {response.status_code} - {response.text}")
 
