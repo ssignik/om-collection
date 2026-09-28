@@ -183,8 +183,8 @@ def get_participant_model(table_name):
 
         @classmethod
         def from_meeting(cls, meeting_id, user_name):
-            # 字符串项与 user_name 重复, 不落 raw_json; 仅接口将来返回对象时才存原始内容
-            raw_json = None if isinstance(user_name, str) else json.dumps(user_name, ensure_ascii=False)
+            # 兼容接口返回对象的情况: dict 取 name/user_name, 原始内容存 raw_json
+            raw_json = json.dumps(user_name, ensure_ascii=False)
             if isinstance(user_name, dict):
                 user_name = user_name.get('name') or user_name.get('user_name') or raw_json
             # 动态生成主键 UUID
