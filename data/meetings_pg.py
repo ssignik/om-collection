@@ -87,11 +87,50 @@ def get_meeting_model(table_name):
         is_removed = Column(String,nullable=False)
         m_id = Column(String)
         platform = Column(String)
+        meeting_date = Column(String)
+        create_time = Column(String)
+        is_private = Column(String)
+        is_record = Column(String)
+        record_platform = Column(String)
+        replay_url = Column(String)
+        obs_url = Column(String)
+        duration = Column(String)
+        duration_time = Column(String)
+        status = Column(String)
+        is_cycle = Column(String)
+        cycle_start_date = Column(String)
+        cycle_end_date = Column(String)
+        cycle_start = Column(String)
+        cycle_end = Column(String)
+        cycle_type = Column(String)
+        cycle_interval = Column(String)
+        cycle_point = Column(String)
+        cycle_sub = Column(String)
+        raw_json = Column(String)
+
+        @staticmethod
+        def _to_str(value):
+            if value is None:
+                return None
+            if isinstance(value, (list, dict, bool)):
+                return json.dumps(value, ensure_ascii=False)
+            return str(value)
 
         @classmethod
-        def from_json(cls, json_data: dict):
+        def from_json(cls, json_data: dict, obs_domain=None):
             # 动态生成主键 UUID
             uuid = f"{json_data['id']}_{json_data['community']}"
+            # 录制信息: bili_data 有回放链接则平台为 bili, 否则 is_record 为真则存 OBS
+            bili_urls = [b.get('replay_url') for b in (json_data.get('bili_data') or []) if b.get('replay_url')]
+            is_record = json_data.get('is_record') is True
+            record_platform = 'bili' if bili_urls else ('obs' if is_record else None)
+            replay_url = json.dumps(bili_urls, ensure_ascii=False) if bili_urls else None
+            group_name = json_data.get('group_name')
+            mid = json_data.get('mid')
+            meeting_date = json_data.get('date')
+            obs_url = None
+            if is_record and obs_domain and group_name and mid and meeting_date:
+                obs_url = f"https://{obs_domain}/zh/video/{group_name}/{mid}/{meeting_date}"
             # 返回 会议 对象
             return cls(
                 uuid=uuid,
@@ -105,12 +144,32 @@ def get_meeting_model(table_name):
                 end=json_data.get('end'),
                 etherpad=json_data.get('etherpad'),
                 email_list=json_data.get('email_list'),
-                mid=json_data.get('mid'),
+                mid=mid,
                 join_url=json_data.get('join_url'),
                 agenda=json_data.get('agenda'),
                 is_removed="1" if json_data.get('is_delete') is True else None ,
-                m_id=json_data.get('m_id'),
-                platform=json_data.get('platform')
+                m_id=json_data.get('m_mid'),
+                platform=json_data.get('platform'),
+                meeting_date=meeting_date,
+                create_time=json_data.get('create_time'),
+                is_private="1" if json_data.get('is_private') is True else None,
+                is_record="1" if is_record else None,
+                record_platform=record_platform,
+                replay_url=replay_url,
+                obs_url=obs_url,
+                duration=cls._to_str(json_data.get('duration')),
+                duration_time=json_data.get('duration_time'),
+                status=cls._to_str(json_data.get('status')),
+                is_cycle="1" if json_data.get('is_cycle') is True else None,
+                cycle_start_date=cls._to_str(json_data.get('cycle_start_date')),
+                cycle_end_date=cls._to_str(json_data.get('cycle_end_date')),
+                cycle_start=cls._to_str(json_data.get('cycle_start')),
+                cycle_end=cls._to_str(json_data.get('cycle_end')),
+                cycle_type=cls._to_str(json_data.get('cycle_type')),
+                cycle_interval=cls._to_str(json_data.get('cycle_interval')),
+                cycle_point=cls._to_str(json_data.get('cycle_point')),
+                cycle_sub=cls._to_str(json_data.get('cycle_sub')),
+                raw_json=json.dumps(json_data, ensure_ascii=False)
             )
     return MeetingInfo
 
@@ -120,18 +179,32 @@ def get_participant_model(table_name):
         uuid = Column(String, primary_key=True, index=True)
         meeting_id = Column(String, nullable=False)
         user_name = Column(String, nullable=False)
+        raw_json = Column(String)
 
         @classmethod
         def from_meeting(cls, meeting_id, user_name):
+            # 兼容接口返回对象的情况: dict 取 name/user_name, 原始内容存 raw_json
+            raw_json = json.dumps(user_name, ensure_ascii=False)
+            if isinstance(user_name, dict):
+                user_name = user_name.get('name') or user_name.get('user_name') or raw_json
             # 动态生成主键 UUID
             uuid = f"{meeting_id}_{user_name}"
             # 返回 参会者对象
             return cls(
                 uuid=uuid,
                 meeting_id=meeting_id,
-                user_name=user_name
+                user_name=user_name,
+                raw_json=raw_json
             )
     return Participants
+
+class SysKvConfig(Base):
+    """通用KV配置表，community为空的行作为全局默认值."""
+    __tablename__ = 'sys_kv_config'
+    uuid = Column(String, primary_key=True, index=True)
+    community = Column(String)
+    config_key = Column(String, nullable=False)
+    config_value = Column(String)
 # ==========================
 # 服务类 (Service)
 # ==========================
@@ -169,6 +242,27 @@ class MeetingService:
             except Exception as e:
                 session.rollback()
                 print(f"Error bulk upserting users: {e}")
+
+    def get_config(self, key, community=None):
+        """
+        读取KV配置: 优先社区级配置, 其次全局默认(community为空).
+        """
+        with self.pg_client.get_session() as session:
+            try:
+                rows = session.query(SysKvConfig).filter(SysKvConfig.config_key == key).all()
+            except Exception as e:
+                session.rollback()
+                print(f"Error reading config {key}: {e}")
+                return None
+        if community:
+            c = community.lower()
+            for row in rows:
+                if row.community and row.community.lower() == c:
+                    return row.config_value
+        for row in rows:
+            if not row.community:
+                return row.config_value
+        return None
 
 # ==========================
 # 第三方接口模拟 (ThirdPart)
@@ -239,6 +333,8 @@ class Meetings(object):
         self.fetch_meeting(from_time)
 
     def fetch_meeting(self, from_time=None):
+        # obs_video_domain 存于 sys_kv_config, 每轮采集现查, 改库即生效
+        self.obs_video_domain = self.meeting_service.get_config('obs_video_domain', self.community)
         now = datetime.now(tz=self.tz)
         start_date = now
         if from_time is not None:
@@ -251,7 +347,7 @@ class Meetings(object):
             meeting_arr = []
             if meeting_json.get('data', []):
                 for obj in meeting_json['data']:
-                    meeting = self.MeetingInfo.from_json(obj)
+                    meeting = self.MeetingInfo.from_json(obj, self.obs_video_domain)
                     print(f"[DEBUG] meeting_id={meeting.meeting_id}, is_removed={meeting.is_removed!r}, raw_is_delete={obj.get('is_delete')!r}")
                     meeting_arr.append(meeting)
                 self.meeting_service.bulk_upsert_meeting(meeting_arr)
