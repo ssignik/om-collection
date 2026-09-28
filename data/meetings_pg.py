@@ -179,22 +179,16 @@ def get_participant_model(table_name):
         uuid = Column(String, primary_key=True, index=True)
         meeting_id = Column(String, nullable=False)
         user_name = Column(String, nullable=False)
-        raw_json = Column(String)
 
         @classmethod
         def from_meeting(cls, meeting_id, user_name):
-            # 兼容接口返回对象的情况: dict 取 name/user_name, 原始内容存 raw_json
-            raw_json = json.dumps(user_name, ensure_ascii=False)
-            if isinstance(user_name, dict):
-                user_name = user_name.get('name') or user_name.get('user_name') or raw_json
             # 动态生成主键 UUID
             uuid = f"{meeting_id}_{user_name}"
             # 返回 参会者对象
             return cls(
                 uuid=uuid,
                 meeting_id=meeting_id,
-                user_name=user_name,
-                raw_json=raw_json
+                user_name=user_name
             )
     return Participants
 
