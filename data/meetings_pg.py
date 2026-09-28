@@ -290,9 +290,7 @@ class MeetingApi:
         }
         response = requests.get(url, headers=headers, verify=False)
         if response.status_code == 200:
-            resp_json = response.json()
-            print(f"[DEBUG] api response url={url}, body={json.dumps(resp_json, ensure_ascii=False)}")
-            return resp_json  # 假设返回的是 JSON 格式的订单数据
+            return response.json()  # 假设返回的是 JSON 格式的订单数据
         else:
             raise Exception(f"Failed to fetch meetings: {response.status_code} - {response.text}")
 
@@ -355,7 +353,6 @@ class Meetings(object):
         for meeting in meetings:
             if meeting.is_removed is None:
                 participants_json = self.meeting_api.fetch_participants(meeting.meeting_id, meeting.community)
-                print(f"[DEBUG] meeting_id={meeting.meeting_id}, mid={meeting.mid}, participants_response={participants_json}")
                 if participants_json.get('data', []) :
                     for name in participants_json['data']:
                         participant = self.Participants.from_meeting(meeting.meeting_id, name)
