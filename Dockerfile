@@ -2,8 +2,11 @@ FROM openeuler/openeuler:22.03
 
 MAINTAINER zhongjun <jun.zhongjun2@gmail.com>
 ENV LOG_DIR /var/log/om
+# 添加配置文件目录环境变量
+ENV APPLICATION_PATH /var/lib/om/config
 
 RUN mkdir -p /var/lib/om
+RUN mkdir -p /var/lib/om/config
 RUN mkdir -p ${LOG_DIR}
 WORKDIR /var/lib/om
 

@@ -18,7 +18,8 @@ numpy>=1.21.2
 google-auth>=2.29.0
 google-cloud-bigquery>=3.19.0
 mysql-connector-python
-psycopg2-binary
 
 # pystan==2.19.1.1
 # prophet==1.0.1
+sqlalchemy~=2.0.39
+psycopg2-binary==2.9.10
