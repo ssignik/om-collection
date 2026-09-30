@@ -14,6 +14,7 @@
 #
 
 
+from concurrent.futures import ThreadPoolExecutor
 import os
 import signal
 from collections import defaultdict
@@ -37,6 +38,7 @@ import datetime
 from json import JSONDecodeError
 from data import common
 from data.common import ESClient
+from data.gitee_pr_version import GiteePrVersion
 from collect.gitee import GiteeClient
 
 logger = logging.getLogger(__name__)
@@ -113,8 +115,17 @@ class Gitee(object):
 
     def run(self, from_time):
         print("Collect gitee data: staring")
+        # 获取最新repo-sig对应表
         repo_sigs_dict = self.esClient.getRepoSigs()
+
+        # 忽略大小写
         self.repo_sigs_dict = self.get_dict_key_lower(repo_sigs_dict)
+
+        # repo-sig对应表为空, 跳过更新
+        if not repo_sigs_dict or len(repo_sigs_dict) > 0:
+            change_repo_sig_dic = self.get_change_repo_sig_dict(repo_sigs_dict)
+            self.esClient.tagRepoSigChanged(change_repo_sig_dic)
+
         self.getGiteeId2Company()
 
         self.getEnterpriseUser()
@@ -162,8 +173,6 @@ class Gitee(object):
             if self.is_set_sigs_star == 'true':
                 self.getSartUsersList()
 
-            change_repo_sig_dic = self.get_change_repo_sig_dict(repo_sigs_dict)
-            self.esClient.tagRepoSigChanged(change_repo_sig_dic)
         endTime = time.time()
         spent_time = time.strftime("%H:%M:%S",
                                    time.gmtime(endTime - startTime))
@@ -177,7 +186,7 @@ class Gitee(object):
 
             sig_names = ['No-SIG']
             if repo.lower() in self.repo_sigs_dict:
-                sig_names = self.repo_sigs_dict.get(repo.lower)
+                sig_names = self.repo_sigs_dict.get(repo.lower())
 
             if 'opengauss' in self.orgs:
                 sig_names = self.get_repo_sig('opengauss', repo)
@@ -251,32 +260,12 @@ class Gitee(object):
                     reposName.append(r['full_name'])
                     func(org, r, from_time)
         else:
-            threads = []
-            for org in self.orgs:
-                repos = self.get_repos(org)
-                reposName = []
-                for r in repos:
-                    reposName.append(r['full_name'])
-                    # func(org, r, from_time)
-                    with self.thread_max_num:
-                        t = threading.Thread(
-                            target=func,
-                            args=(org, r, from_time))
-                    threads.append(t)
-                    t.start()
-
-                    if len(threads) % self.thread_pool_num == 0:
-                        for t in threads:
-                            t.join()
-                        threads = []
-                # if reposName is not None and len(reposName) > 0:
-                #     self.updateRemovedData(reposName, 'repo', [{
-                #         "name": "is_gitee_repo",
-                #         "value": 1,
-                #     }])
-                for t in threads:
-                    t.join()
-                threads = []
+            with ThreadPoolExecutor(max_workers=self.thread_pool_num) as executor:
+                for org in self.orgs:
+                    reposName = []
+                    repos = self.get_repos(org)
+                    for r in repos:
+                        executor.submit(func, org, r, from_time)
 
     def externalUpdateRepo(self):
         if self.is_update_repo_author == 'true':
@@ -692,6 +681,21 @@ class Gitee(object):
     # Multi-layer variable
     def findVar(self, versionStr, spec):
         global strsss
+        try:
+            cond_pattern = re.compile(r'%\{\?([^:}]+):([^}]*)\}(.*?)%\{\!\?\1:([^}]*)\}')
+        
+            def handle_cond(match):
+                try:
+                    var = match.group(1)
+                    true_val = match.group(2)
+                    false_val = match.group(4)
+                    return true_val if (var in spec.macros and spec.macros[var]) else false_val
+                except:
+                    return match.group(0)
+            
+            versionStr = cond_pattern.sub(handle_cond, versionStr)
+        except Exception as e:
+            print(f"Conditional macro error: {str(e)}")
         allVar = re.findall(r'%{(.*?)}', versionStr)
         if len(allVar) == 0:
             strsss = versionStr
@@ -776,7 +780,7 @@ class Gitee(object):
 
         # collect pull request
         pull_data = self.getGenerator(
-            client.pulls(state='all', once_update_num_of_pr=once_update_num_of_pr, direction='desc',
+            client.pulls(state='all', once_update_num_of_pr=once_update_num_of_pr, direction='asc',
                          sort='updated', since=from_date))
         print(('collection %d pulls' % (len(pull_data))))
         for x in pull_data:
@@ -792,7 +796,6 @@ class Gitee(object):
             pull_code_diff = self.getGenerator(client.pull_code_diff(pr_number))
             pull_action_logs = self.getGenerator(client.pull_action_logs(pr_number))
             pull_review_comments = self.getGenerator(client.pull_review_comments(pr_number))
-            pull_commits = self.getGenerator(client.pull_commits(pr_number))
 
             codediffadd = 0
             codediffdelete = 0
@@ -813,7 +816,6 @@ class Gitee(object):
             x['codediffadd'] = codediffadd
             x['codediffdelete'] = codediffdelete
             eitem = self.__get_rich_pull(x, merged_item)
-            actions += self.write_pull_commit_data(pull_commits, eitem, owner, sig_names)
 
             ecomments = self.get_rich_pull_reviews(pull_review_comments, eitem, owner)
             res_comment = self.write_comment_data(ecomments, eitem, sig_names, data_type='pull')
@@ -1096,10 +1098,13 @@ class Gitee(object):
             ecommit['item_type'] = COMMIT_TYPE
             ecommit['org_name'] = owner
 
+            if not isinstance(commit, dict):
+                continue
             # Copy data from the raw commit
-            ecommit['url'] = commit['html_url']
-            ecommit['commit_url'] = commit['html_url']
-            ecommit['sha'] = commit['sha']
+            if isinstance(commit, dict) and 'html_url' in commit:
+                ecommit['url'] = commit['html_url']
+                ecommit['commit_url'] = commit['html_url']
+                ecommit['sha'] = commit['sha']
 
             committer = commit.get('committer', None)
             author = commit.get('author', None)
@@ -1215,8 +1220,11 @@ class Gitee(object):
         rich_pr['pull_url'] = pull_request['html_url']
         # rich_pr['issue_url'] = pull_request['html_url']
 
-        labels = []
-        [labels.append(label['name']) for label in pull_request['labels'] if 'labels' in pull_request]
+        labels = [
+            label['name']
+            for label in (pull_request.get('labels') or [])
+            if isinstance(label, dict) and 'name' in label
+        ]
         rich_pr['pull_labels'] = labels
         rich_pr['tag_sig_names'] = self.get_tag_sig(labels)
 
@@ -1246,6 +1254,8 @@ class Gitee(object):
         #    rich_pr.update(self.get_item_project(rich_pr))
         userExtra = self.esClient.getUserInfo(rich_pr['user_login'], pull_request['created_at'])
         rich_pr.update(userExtra)
+        pr_author = self.refresh_sync_pr_author(rich_pr['pull_url'], rich_pr['body'])
+        rich_pr.update(pr_author)
         rich_pr['addcodenum'] = pull_request['codediffadd']
         rich_pr['deletecodenum'] = pull_request['codediffdelete']
         if 'project' in item:
@@ -1255,6 +1265,21 @@ class Gitee(object):
 
         return rich_pr
 
+    def refresh_sync_pr_author(self, pull_url, body):
+        user = {}
+        if body and 'Origin pull request:' in body:
+            try:
+                client = GiteePrVersion(self.config)
+                client.index_name_gitee = self.index_name
+                prs = body.split('Origin pull request:')
+                origin_pr = prs[1].split('#')[0].strip()
+                origin_pr = origin_pr.replace('e.gitee.com/open_euler/repos', 'gitee.com')
+                user = client.get_origin_pr_author(origin_pr)
+            except Exception:
+                print(f'parse pr author error: {pull_url}')
+        user = {} if not user else user
+        return user
+    
     def mark_invalid_pr_by_title(self, title):
         for item in self.invalid_pr_title.split(";"):
             if str(title).__contains__(item):

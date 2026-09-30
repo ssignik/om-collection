@@ -17,6 +17,7 @@ import json
 from datetime import datetime
 
 import xlrd
+from collect.pg_sql import PgSqlClient
 
 from data.common import ESClient
 
@@ -31,11 +32,14 @@ class BlueZoneUser(object):
         self.gitee_commit_index = config.get('gitee_commit_indexs')
         self.github_pr_issue_index = config.get('github_pr_issue_indexs')
         self.github_commit_index = config.get('github_commit_indexs')
+        self.gitcode_pr_issue_index = config.get('gitcode_pr_issue_indexs')
+        self.gitcode_commit_index = config.get('gitcode_commit_indexs')
         self.target_index = config.get('target_index')
         self.users = []
         self.user = {}
         self.startTime = config.get('start_time')
         self.endTime = config.get('end_time')
+        self.base_url = config.get('base_url')
 
     def run(self, from_date):
         print('Start collection BlueZoneUserContributes')
@@ -56,12 +60,15 @@ class BlueZoneUser(object):
                 self.get_pr_gitee()
                 self.get_issue_gitee()
                 self.get_pr_issue_comment_gitee()
-                self.get_commit(indexs_str=self.gitee_commit_index)
             if user['github_id'] is not None and user['github_id'] != '':
                 self.get_pr_github()
                 self.get_issue_github()
                 self.get_pr_issue_comment_github()
-                self.get_commit(indexs_str=self.github_commit_index)
+            if user.get('gitcode_id'):
+                self.get_pr_issue_comment_gitcode()
+            self.get_commit(indexs_str=self.github_commit_index)
+            self.get_commit(indexs_str=self.gitee_commit_index)
+            self.get_commit(indexs_str=self.gitcode_commit_index)
 
     def userFromExcel(self):
         wb = xlrd.open_workbook("C:\\Users\\Administrator\\Desktop\\blue_zone_user.xls")
@@ -76,8 +83,10 @@ class BlueZoneUser(object):
         for r in range(1, sh.nrows):
             name = self.getCellValue(r, '姓名', sh, cell_name_index_dict)
             org = self.getCellValue(r, '项目群', sh, cell_name_index_dict)
-            gitee_id = self.getCellValue(r, 'gitee_id', sh, cell_name_index_dict)
-            github_id = self.getCellValue(r, 'github_id', sh, cell_name_index_dict)
+            gitee_id = self.getCellValue(
+                r, 'gitee_id', sh, cell_name_index_dict)
+            github_id = self.getCellValue(
+                r, 'github_id', sh, cell_name_index_dict)
             emails = self.getCellValue(r, '邮箱', sh, cell_name_index_dict)
 
             if gitee_id is not None and gitee_id != '':
@@ -92,7 +101,8 @@ class BlueZoneUser(object):
                       'emails': emails,
                       'created_at': '2021-08-11T11:21:39+08:00'}
 
-            index_data = {"index": {"_index": "blue_zone_users_test", "_id": id}}
+            index_data = {
+                "index": {"_index": "blue_zone_users_test", "_id": id}}
             actions += json.dumps(index_data) + '\n'
             actions += json.dumps(action) + '\n'
 
@@ -101,12 +111,14 @@ class BlueZoneUser(object):
     def getCellValue(self, row_index, cell_name, sheet, cell_name_index_dict):
         if cell_name not in cell_name_index_dict:
             return ''
-        cell_value = sheet.cell_value(row_index, cell_name_index_dict.get(cell_name))
+        cell_value = sheet.cell_value(
+            row_index, cell_name_index_dict.get(cell_name))
         return cell_value
 
     def get_blue_users(self):
         users_search = '''{"size": 10000,"query": {"bool": {"must": [{"match_all": {}}]}}}'''
-        self.esClient.scrollSearch(index_name=self.user_index, search=users_search, func=self.blue_users_func)
+        self.esClient.scrollSearch(
+            index_name=self.user_index, search=users_search, func=self.blue_users_func)
 
     def blue_users_func(self, hits):
         for hit in hits:
@@ -157,7 +169,8 @@ class BlueZoneUser(object):
                       }
                     }''' % (self.user['gitee_id'].strip(), self.startTime, self.endTime)
         for index in indexs:
-            self.esClient.scrollSearch(index_name=index, search=search, scroll_duration='2m', func=self.pr_func_gitee)
+            self.esClient.scrollSearch(
+                index_name=index, search=search, scroll_duration='2m', func=self.pr_func_gitee)
 
     def pr_func_gitee(self, hits):
         actions = ''
@@ -179,7 +192,8 @@ class BlueZoneUser(object):
             repo_data.update(self.user)
             id = str(source['gitee_repo']) + 'pr' + str(source['pull_id'])
             index_id = hashlib.md5(id.encode('utf-8')).hexdigest()
-            index_data = {"index": {"_index": self.target_index, "_id": index_id}}
+            index_data = {
+                "index": {"_index": self.target_index, "_id": index_id}}
             actions += json.dumps(index_data) + '\n'
             actions += json.dumps(repo_data) + '\n'
         self.esClient.safe_put_bulk(actions)
@@ -229,7 +243,8 @@ class BlueZoneUser(object):
                       }
                     }''' % (self.user['gitee_id'].strip(), self.startTime, self.endTime)
         for index in indexs:
-            self.esClient.scrollSearch(index_name=index, search=search, scroll_duration='2m', func=self.issue_func_gitee)
+            self.esClient.scrollSearch(
+                index_name=index, search=search, scroll_duration='2m', func=self.issue_func_gitee)
 
     def issue_func_gitee(self, hits):
         actions = ''
@@ -252,7 +267,8 @@ class BlueZoneUser(object):
             repo_data.update(self.user)
             id = str(source['gitee_repo']) + 'issue' + str(source['issue_id'])
             index_id = hashlib.md5(id.encode('utf-8')).hexdigest()
-            index_data = {"index": {"_index": self.target_index, "_id": index_id}}
+            index_data = {
+                "index": {"_index": self.target_index, "_id": index_id}}
             actions += json.dumps(index_data) + '\n'
             actions += json.dumps(repo_data) + '\n'
         self.esClient.safe_put_bulk(actions)
@@ -304,7 +320,8 @@ class BlueZoneUser(object):
                       }
                     }''' % (self.user['gitee_id'].strip(), self.startTime, self.endTime)
         for index in indexs:
-            self.esClient.scrollSearch(index_name=index, search=search, scroll_duration='2m', func=self.pr_issue_comment_func_gitee)
+            self.esClient.scrollSearch(
+                index_name=index, search=search, scroll_duration='2m', func=self.pr_issue_comment_func_gitee)
 
     def pr_issue_comment_func_gitee(self, hits):
         actions = ''
@@ -340,7 +357,8 @@ class BlueZoneUser(object):
             repo_data.update(self.user)
             id = str(source['gitee_repo']) + parent + str(source['id'])
             index_id = hashlib.md5(id.encode('utf-8')).hexdigest()
-            index_data = {"index": {"_index": self.target_index, "_id": index_id}}
+            index_data = {
+                "index": {"_index": self.target_index, "_id": index_id}}
             actions += json.dumps(index_data) + '\n'
             actions += json.dumps(repo_data) + '\n'
         self.esClient.safe_put_bulk(actions)
@@ -360,7 +378,8 @@ class BlueZoneUser(object):
                               "file_changed",
                               "repo",
                               "commit_id",
-                              "email"
+                              "email",
+                              "test_add"
                             ]
                           },
                           "query": {
@@ -389,7 +408,8 @@ class BlueZoneUser(object):
                           }
                         }''' % (email.strip(), self.startTime, self.endTime)
             for index in indexs:
-                self.esClient.scrollSearch(index_name=index, search=search, scroll_duration='2m', func=self.commit_func)
+                self.esClient.scrollSearch(
+                    index_name=index, search=search, scroll_duration='2m', func=self.commit_func)
         self.user['emails'] = emails_str
 
     def commit_func(self, hits):
@@ -406,10 +426,12 @@ class BlueZoneUser(object):
                 'file_changed': source['file_changed'],
                 'is_commit': 1,
             }
+            repo_data.update({"test_add":source.get("test_add",0)})
             repo_data.update(self.user)
             id = str(source['repo']) + 'commit' + str(source['commit_id'])
             index_id = hashlib.md5(id.encode('utf-8')).hexdigest()
-            index_data = {"index": {"_index": self.target_index, "_id": index_id}}
+            index_data = {
+                "index": {"_index": self.target_index, "_id": index_id}}
             actions += json.dumps(index_data) + '\n'
             actions += json.dumps(repo_data) + '\n'
         self.esClient.safe_put_bulk(actions)
@@ -459,7 +481,8 @@ class BlueZoneUser(object):
                       }
                     }''' % (self.user['github_id'].strip(), self.startTime, self.endTime)
         for index in indexs:
-            self.esClient.scrollSearch(index_name=index, search=search, scroll_duration='2m', func=self.pr_func_github)
+            self.esClient.scrollSearch(
+                index_name=index, search=search, scroll_duration='2m', func=self.pr_func_github)
 
     def pr_func_github(self, hits):
         actions = ''
@@ -481,7 +504,8 @@ class BlueZoneUser(object):
             repo_data.update(self.user)
             id = str(source['github_repo']) + 'pr' + str(source['pr_id'])
             index_id = hashlib.md5(id.encode('utf-8')).hexdigest()
-            index_data = {"index": {"_index": self.target_index, "_id": index_id}}
+            index_data = {
+                "index": {"_index": self.target_index, "_id": index_id}}
             actions += json.dumps(index_data) + '\n'
             actions += json.dumps(repo_data) + '\n'
         self.esClient.safe_put_bulk(actions)
@@ -530,7 +554,8 @@ class BlueZoneUser(object):
                       }
                     }''' % (self.user['github_id'].strip(), self.startTime, self.endTime)
         for index in indexs:
-            self.esClient.scrollSearch(index_name=index, search=search, scroll_duration='2m', func=self.issue_func_github)
+            self.esClient.scrollSearch(
+                index_name=index, search=search, scroll_duration='2m', func=self.issue_func_github)
 
     def issue_func_github(self, hits):
         actions = ''
@@ -552,7 +577,8 @@ class BlueZoneUser(object):
             repo_data.update(self.user)
             id = str(source['github_repo']) + 'issue' + str(source['issue_id'])
             index_id = hashlib.md5(id.encode('utf-8')).hexdigest()
-            index_data = {"index": {"_index": self.target_index, "_id": index_id}}
+            index_data = {
+                "index": {"_index": self.target_index, "_id": index_id}}
             actions += json.dumps(index_data) + '\n'
             actions += json.dumps(repo_data) + '\n'
         self.esClient.safe_put_bulk(actions)
@@ -603,7 +629,8 @@ class BlueZoneUser(object):
                       }
                     }''' % (self.user['github_id'].strip(), self.startTime, self.endTime)
         for index in indexs:
-            self.esClient.scrollSearch(index_name=index, search=search, scroll_duration='2m', func=self.pr_issue_comment_func_github)
+            self.esClient.scrollSearch(
+                index_name=index, search=search, scroll_duration='2m', func=self.pr_issue_comment_func_github)
 
     def pr_issue_comment_func_github(self, hits):
         actions = ''
@@ -633,7 +660,57 @@ class BlueZoneUser(object):
             repo_data.update(self.user)
             id = str(source['github_repo']) + parent + str(source['id'])
             index_id = hashlib.md5(id.encode('utf-8')).hexdigest()
-            index_data = {"index": {"_index": self.target_index, "_id": index_id}}
+            index_data = {
+                "index": {"_index": self.target_index, "_id": index_id}}
+            actions += json.dumps(index_data) + '\n'
+            actions += json.dumps(repo_data) + '\n'
+        self.esClient.safe_put_bulk(actions)
+
+    def get_pr_issue_comment_gitcode(self):
+        indexs = str(self.gitcode_pr_issue_index).split(";")
+        pg = PgSqlClient(self.config)
+        gitcode_id = self.user['gitcode_id'].strip()
+        for index in indexs:
+            cursor_query = f"""
+                SELECT uuid,body,created_at,updated_at,tag_url,comment_type,repo_path,namespace,html_url
+                FROM {index}
+                WHERE is_comment = 1 AND user_login = '{gitcode_id}' AND updated_at >= '{self.startTime}' AND updated_at <= '{self.endTime}' AND uuid > %s
+                ORDER BY uuid
+                LIMIT %s;
+            """
+            query = f"""
+                SELECT uuid,body,created_at,updated_at,tag_url,comment_type,repo_path,namespace,html_url
+                FROM {index}
+                WHERE is_comment = 1 AND user_login = '{gitcode_id}' AND updated_at >= '{self.startTime}' AND updated_at <= '{self.endTime}'
+                ORDER BY uuid
+                LIMIT %s;
+            """
+            pg.fetch_all(self.pr_issue_comment_func_gitcode,
+                         cursor_query, query)
+
+    def pr_issue_comment_func_gitcode(self, rows):
+        actions = ''
+        for row in rows:
+            body = row[1]
+            parent_id = row[4].split('/')[-1]
+            created_at = row[2].strftime(
+                '%Y-%m-%dT%H:%M:%S') + row[2].strftime('%z')[:3] + ':' + row[2].strftime('%z')[3:]
+            updated_at = row[3].strftime(
+                '%Y-%m-%dT%H:%M:%S') + row[3].strftime('%z')[:3] + ':' + row[3].strftime('%z')[3:]
+            repo_data = {
+                'created_at': created_at,
+                'updated_at': updated_at,
+                'repo': self.base_url % ('gitcode', row[7], row[6]),
+                'is_comment': 1,
+                'comment_body': body,
+                'parent_id': parent_id,
+                'url': row[8]
+            }
+            repo_data.update(self.user)
+            id = repo_data['repo'] + row[0]
+            index_id = hashlib.md5(id.encode('utf-8')).hexdigest()
+            index_data = {
+                "index": {"_index": self.target_index, "_id": index_id}}
             actions += json.dumps(index_data) + '\n'
             actions += json.dumps(repo_data) + '\n'
         self.esClient.safe_put_bulk(actions)
