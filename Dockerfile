@@ -21,9 +21,10 @@ RUN groupadd -g 1001 user \
 RUN wget https://repo.huaweicloud.com/python/3.9.20/Python-3.9.20.tgz \
     && tar -zxvf Python-3.9.20.tgz \
     && cd Python-3.9.20 \
-    && yum install -y gcc libffi-devel bzip2-devel zlib* openssl-devel make \
+    && yum install -y gcc gcc-c++ make python3-devel libffi-devel bzip2-devel zlib* openssl-devel make \
     && ./configure --prefix=/usr/local/python3 \
-    && make && make install
+    && make && make install \
+    && yum clean all
 
 RUN cd /usr/bin \
     && rm -rf ./python3 \

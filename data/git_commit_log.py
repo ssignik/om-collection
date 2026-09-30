@@ -13,11 +13,13 @@
 # Create: 2022-03
 #
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import datetime
 import hashlib
 import json
 import os
 import re
+import subprocess
 import types
 from collections import defaultdict
 from json import JSONDecodeError
@@ -37,7 +39,17 @@ GITCODE_BASE = "gitcode.com"
 HUGGINGFACE_BASE = "huggingface.co"
 CODEARTS_BASE = "codehub.devcloud.cn-southwest-2.huaweicloud.com"  # codearts域名
 DEFAULT_BRANCH_HEAD = "  origin/HEAD ->"
-
+# 测试文件名匹配正则
+TEST_FILE_PATTERN = re.compile(
+    r"(?:^|[/\\])"
+    r"(?:"
+        r"test"
+        r"|.*[-_\w]test"   # ← 修改这里：加入 -
+    r")"
+    r"[^/\\]*"
+    r"\.(py|java|js|ts|c|cpp|cc|go|rs|rb|php|cs|jmx|sh|h)$",
+    re.IGNORECASE,
+)
 
 class GitCommitLog(object):
     def __init__(self, config=None):
@@ -60,6 +72,7 @@ class GitCommitLog(object):
         self.domain_orgs_dict = {}
         self.repo_sigs_dict = defaultdict(dict)
         self.white_box_yaml = config.get('white_box_yaml')
+        self.config_repo = config.get('config_repo')
         self.codearts_yaml = config.get('codearts_yaml')
         self.upstream_yaml = config.get('upstream_yaml')
         self.user_file = config.get('user_file')
@@ -76,6 +89,8 @@ class GitCommitLog(object):
         self.base_api = config.get('base_api')
         self.session = requests.Session()
         self.email_user_dict = {}
+        self.email_login_dict = {}
+        self.thread_pool_num = int(config.get('thread_pool_num', 10))
 
     def run(self, from_time):
         print("Git commit log collect: start")
@@ -94,12 +109,14 @@ class GitCommitLog(object):
             self.getCommitWhiteBox(default_branch_repos, 'default')  # 只是获取默认分支commit
             self.getCommitWhiteBox(all_branch_repos)  # 获取全部分支commit
         elif self.upstream_yaml:  # upstream 指定仓库
-            self.email_orgs_dict, self.domain_orgs_dict, self.email_user_dict = self.getUpstreamCompany(
-                user_file=self.user_file, company_yaml=self.company_yaml)
-            all_branch_repos, default_branch_repos = self.getReposFromYaml(yaml_file=self.upstream_yaml)
-            self.getCommitWhiteBox(default_branch_repos, 'default')  # 只是获取默认分支commit
-            self.getCommitWhiteBox(all_branch_repos)  # 获取全部分支commit
-            self.update_company_changed()
+            self.email_orgs_dict, self.domain_orgs_dict, self.email_user_dict, self.email_login_dict = self.get_upstream_from_yaml(
+                company_yaml=self.company_yaml, user_file=self.user_file)
+            if self.email_orgs_dict and self.domain_orgs_dict and self.email_user_dict and self.email_login_dict:
+                self.update_company_changed()
+                self.update_userinfo_changed()
+                all_branch_repos, default_branch_repos = self.getReposFromYaml(yaml_file=self.upstream_yaml)
+                self.getCommitWhiteBox(default_branch_repos, 'default')  # 只是获取默认分支commit
+                self.getCommitWhiteBox(all_branch_repos)  # 获取全部分支commit
         elif self.model_repo_yaml:  # 大模型指定仓库
             self.domain_orgs_dict, aliases_company_dict = self.get_domain_org(company_yaml=self.company_yaml)
             all_branch_repos, default_branch_repos = self.getReposFromYaml(yaml_file=self.model_repo_yaml)
@@ -141,18 +158,17 @@ class GitCommitLog(object):
                 # 预留其它平台扩展
                 continue
 
-            for repo in repos:
-                if not str(repo).__contains__('->'):
-                    continue
-                rb = repo.split('->')
-                branch_name = rb[1]
-                if self.all_repo_default_branch == 'true':
-                    branch_name = 'default'
-                try:
-                    self.getLog(platform, owner, repo_name=rb[0], branch_name=branch_name)
-                except Exception:
-                    print('*** platform: %s, owner: %s, repo: %s, fail ***' % (platform, owner, repo))
-
+            with ThreadPoolExecutor(max_workers=self.thread_pool_num) as executor:
+                for repo in repos:
+                    if not str(repo).__contains__('->'):
+                        continue
+                    rb = repo.split('->')
+                    branch_name = rb[1]
+                    if self.all_repo_default_branch == 'true':
+                        branch_name = 'default'
+                    executor.submit(self.getLog, platform, owner,
+                                    rb[0], branch_name)
+    
     def getLog(self, platform, owner, repo_name, branch_name, path=None):
         """
         执行克隆操作
@@ -161,7 +177,7 @@ class GitCommitLog(object):
         owner_path = self.code_base_path + platform + os.sep + owner + os.sep
         if not os.path.exists(owner_path):
             os.makedirs(owner_path)
-        code_path = owner_path + repo_name
+        code_path = owner_path + repo_name.split('/')[-1]
 
         username = base64.b64decode(self.username).decode()
         # 托管平台格式构造远程仓库URL
@@ -178,9 +194,9 @@ class GitCommitLog(object):
             remote_repo = 'https://%s/%s' % (HUGGINGFACE_BASE, path)
             clone_url = 'https://%s:%s@%s/%s' % (
                 username, self.huggingface_access_token, HUGGINGFACE_BASE, path)
-        elif platform in CODEARTS_BASE:  # CodeArts的URL构造
-            remote_repo = f"https://{CODEARTS_BASE}/{owner}/{repo_name}"
-            clone_url = f"https://{username}:{self.codearts_password}@{CODEARTS_BASE}/{owner}/{repo_name}"
+        elif  platform.startswith():  # CodeArts的URL构造
+            remote_repo = f"https://{platform}/{owner}/{repo_name}"
+            clone_url = f"https://{username}:{self.codearts_password}@{platform}/{owner}/{repo_name}"
         else:
             remote_repo = None
             clone_url = None
@@ -191,17 +207,18 @@ class GitCommitLog(object):
             if clone_url is None:
                 return
             if platform == 'huggingface':
-                cmd_clone = 'cd %s;git clone %s' % (owner_path, clone_url)
+                cmd_clone = clone_url
             else:
-                cmd_clone = 'cd %s;git clone %s' % (owner_path, clone_url + '.git')
-            os.system(cmd_clone)
+                cmd_clone = clone_url + '.git'
+            self.git_operation_repo('clone', owner_path, cmd_clone)
 
         # 用GitPython加载本地仓库
         try:
             repo = git.Repo(code_path)
             repo.git.remote('prune', 'origin')
-        except Exception:
-            print('*** repo clone fail: %s' % remote_repo)
+            self.remove_deleted_branch(repo)
+        except Exception as e:
+            print('*** repo clone fail: %s' % remote_repo, e)
             return
 
         self.reset_remote_url(repo, clone_url)
@@ -225,12 +242,12 @@ class GitCommitLog(object):
             merge_commits = list(
                 repo.iter_commits(since=self.start_date, until=self.end_date, author=self.user_commit_name,
                                   merges=True))
-            self.parse_commits(merge_commits, platform, owner, branch_name, remote_repo, 1, default_branch, repo_name)
+            self.parse_commits(merge_commits, platform, owner, branch_name, remote_repo, 1, default_branch, repo_name,repo)
             no_merge_commits = list(
                 repo.iter_commits(since=self.start_date, until=self.end_date, author=self.user_commit_name,
                                   no_merges=True))
             self.parse_commits(no_merge_commits, platform, owner, branch_name, remote_repo, 0, default_branch,
-                               repo_name)
+                               repo_name,repo)
         else:
             # 遍历所有分支，获取数据
             for branch in branchs:
@@ -245,15 +262,15 @@ class GitCommitLog(object):
                     repo.iter_commits(since=self.start_date, until=self.end_date, author=self.user_commit_name,
                                       merges=True))
                 self.parse_commits(merge_commits, platform, owner, branch_name, remote_repo, 1, default_branch,
-                                   repo_name)
+                                   repo_name,repo)
                 no_merge_commits = list(
                     repo.iter_commits(since=self.start_date, until=self.end_date, author=self.user_commit_name,
                                       no_merges=True))
                 self.parse_commits(no_merge_commits, platform, owner, branch_name, remote_repo, 0, default_branch,
-                                   repo_name)
+                                   repo_name,repo)
 
     # 数据解析
-    def parse_commits(self, commits, platform, owner, branch, repo_url, is_merge, default_branch, repo_name):
+    def parse_commits(self, commits, platform, owner, branch, repo_url, is_merge, default_branch, repo_name,repo=None):
         is_default_branch = 0
         if branch == default_branch:
             is_default_branch = 1
@@ -276,6 +293,10 @@ class GitCommitLog(object):
             unified_user = commit.author.name
             if self.email_user_dict and email in self.email_user_dict:
                 unified_user = self.email_user_dict[email]
+            
+            user_login = ''
+            if self.email_login_dict and email in self.email_login_dict:
+                user_login = self.email_login_dict[email]
 
             sigs = ['No-SIG']
             owner_repo = '%s/%s' % (owner, repo_name)
@@ -305,7 +326,8 @@ class GitCommitLog(object):
                 'platform': platform,
                 'commit_url': repo_url + '/commit/' + commit.hexsha,
                 'is_merge': is_merge,
-                'unified_user': unified_user
+                'unified_user': unified_user,
+                'user_login': user_login
             }
 
             # 协作者信息
@@ -323,6 +345,13 @@ class GitCommitLog(object):
             if commit_reviewers:
                 action['commit_reviewers'] = commit_reviewers
                 action['commit_reviewer_emails'] = commit_reviewer_emails
+            test_code_additions = 0
+            try:
+                test_code_additions = self.get_test_code_additions(repo, commit.hexsha)
+            except Exception as e:
+                print(f"Error counting test code additions for commit {commit.hexsha}: {e}")
+            # 将结果加入 action 字典
+            action['test_add'] = test_code_additions
 
             id_str = action['commit_url'] + '-' + branch
             index_id = hashlib.md5(id_str.encode('utf-8')).hexdigest()
@@ -339,6 +368,143 @@ class GitCommitLog(object):
                 actions = ''
         self.esClient.safe_put_bulk(actions)
 
+
+    # 判断是否是测试文件
+    def is_test_file(self,filename):
+        return TEST_FILE_PATTERN.search(filename) is not None
+
+    # 统计 diff 中的新增行数（+ 行）
+    def count_test_code_additions(self,diff_text):
+        added_lines = 0
+        for line in diff_text.splitlines():
+            if line.startswith('+') and not line.startswith('+++'):
+                added_lines += 1
+        return added_lines
+
+    # 获取某个 commit 中测试代码新增行数
+    def get_test_code_additions(self, repo, commit_hexsha):
+        """
+        统计指定 commit 中所有测试文件的新增代码行数（不包括删除行）。
+        使用 `git diff --numstat` 避免手动解析 diff 内容，更准确高效。
+        """
+        try:
+            # 获取该 commit 相对于其父提交的变更统计
+            # 对于初始提交（无父），Git 会自动处理为与空树比较
+            stats_output = repo.git.show(
+                commit_hexsha, 
+                "--numstat"
+            )
+        except Exception:
+            # 处理初始提交（root commit）：没有父提交
+            return 0
+
+        total_additions = 0
+        for line in stats_output.strip().splitlines():
+            parts = line.split('\t')
+            if len(parts) < 3:
+                continue
+            added, deleted, filepath = parts
+            # 跳过二进制文件（Git 用 '-' 表示）
+            if added == '-' or deleted == '-':
+                continue
+            if self.is_test_file(filepath):
+                total_additions += int(added)
+
+        return total_additions
+
+    def git_operation_repo(self, operation, cwd, url=None):
+        git_cmd = ['git', operation]
+        if url:
+            git_cmd.append(url)
+        try:
+            result = subprocess.run(
+                git_cmd,
+                cwd=cwd,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            print(f"Git {operation} successful:", result.stdout)
+        except subprocess.CalledProcessError as e:
+            print(f"Git {operation} failed:", e.stderr)
+    
+    def get_config_repo(self):
+        owner = self.config_repo.split('/')[-2]
+        repo = self.config_repo.split('/')[-1]
+        cmd = os.path.join(self.code_base_path, owner)
+        repo_path = os.path.join(cmd, repo)
+        if not os.path.exists(cmd):
+            os.makedirs(cmd)
+        if not os.path.exists(repo_path):
+            self.git_operation_repo('clone', cmd, self.config_repo + '.git')
+        else:
+            self.git_operation_repo('pull', repo_path)
+        return repo_path
+        
+    def get_company_from_yaml(self, repo_path, company_yaml):
+        company_yaml = os.path.join(repo_path, company_yaml)
+        domain_org_dict = {}
+        aliases_company_dict = {}
+        try:
+            # 企业别名和企业名称
+            company_datas = yaml.safe_load(open(company_yaml, encoding='UTF-8'))
+            for company in company_datas['companies']:
+                company_name = company['company_name']
+                for alias in company['aliases']:
+                    aliases_company_dict.update({alias: company_name})
+                for domain in company['domains']:
+                    domain_org_dict.update({domain: company_name})
+        except Exception as e:
+            print(f'Get domain org error: {e}')
+        return domain_org_dict, aliases_company_dict
+
+    def get_upstream_from_yaml(self, company_yaml, user_file):
+        email_org_dict = {}
+        domain_org_dict = {}
+        email_user_dict = {}
+        email_login_dict = {}
+
+        repo_path = self.get_config_repo()
+        domain_org_dict, aliases_company_dict = self.get_company_from_yaml(
+            repo_path, company_yaml)
+
+        yaml_path = os.path.join(repo_path, user_file)
+        all_items = os.listdir(yaml_path)
+        user_yaml = [item for item in all_items if item.endswith('.yaml') and
+                     os.path.isfile(os.path.join(yaml_path, item))]
+        for file in user_yaml:
+            file_path = os.path.join(yaml_path, file)
+            email_org_tmp, email_user_tmp, email_login_tmp = self.get_user_from_yaml(
+                file_path, aliases_company_dict)
+            email_org_dict.update(email_org_tmp)
+            email_user_dict.update(email_user_tmp)
+            email_login_dict.update(email_login_tmp)
+        return email_org_dict, domain_org_dict, email_user_dict, email_login_dict
+
+    def get_user_from_yaml(self, file_path, aliases_company_dict):
+        email_org_dict, email_user_dict, email_login_dict = {}, {}, {}
+        try:
+            user_datas = yaml.safe_load(open(file_path, encoding='UTF-8'))
+            for user in user_datas.get('users'):
+                user_companies = []
+                for company in user['companies']:
+                    user_company = company['company_name']
+                    if user_company in aliases_company_dict:
+                        user_company = aliases_company_dict[user_company]
+                    company['company_name'] = user_company
+                    user_companies.append(company)
+
+                user_companies.sort(key=lambda x: x['end_date'] if x['end_date'] else '9999-12-31')
+                for email in user['emails']:
+                    email_org_dict.update({email: user_companies})
+                    email_user_dict.update({email: user.get('user_name')})
+                    if user.get('github_id'):
+                        email_login_dict.update({email: user.get('github_id')})
+        except Exception as e:
+            print(f'Parse file {file_path} error: {e}')
+        return email_org_dict, email_user_dict, email_login_dict
+    
     @staticmethod
     def get_company_by_end_date(companies, commit_time):
         if not isinstance(companies, list):
@@ -349,15 +515,15 @@ class GitCommitLog(object):
         for company_info in companies:
             if commit_time < company_info['end_date']:
                 return company_info['company_name']
-        return companies[0]['company_name']
+        return companies[-1]['company_name']
 
     def update_company_changed(self):
         for email, companies in self.email_orgs_dict.items():
             start_date = '0000-01-01'
-            for i in range(1, len(companies)):
+            for i in range(0, len(companies)):
                 if start_date > self.start_date:
                     continue
-                end_date = companies[i]['end_date']
+                end_date = companies[i]['end_date'] if companies[i]['end_date'] else '9999-12-31'
                 company = companies[i]['company_name']
                 query = '''{
                     "script": {
@@ -377,7 +543,7 @@ class GitCommitLog(object):
                                 {
                                     "query_string": {
                                         "analyze_wildcard": true,
-                                        "query": "email.keyword.keyword:%s AND !tag_user_company.keyword:%s"
+                                        "query": "email.keyword:\\"%s\\" AND !tag_user_company.keyword:\\"%s\\""
                                     }
                                 }
                             ]
@@ -386,6 +552,48 @@ class GitCommitLog(object):
                 }''' % (company, start_date, end_date, email, company)
                 start_date = end_date
                 self.esClient.updateByQuery(query=query.encode('utf-8'))
+
+    def update_userinfo_changed(self):
+        self.update_user_field('user_login', self.email_login_dict)
+        self.update_user_field('unified_user', self.email_user_dict)
+
+    def update_user_field(self, field, user_dict):
+        for email, user_login in user_dict.items():
+                query = '''{
+                    "script": {
+                        "source": "ctx._source['%s']='%s'"
+                    },
+                    "query": {
+                        "bool": {
+                            "filter": [
+                                {
+                                    "query_string": {
+                                        "analyze_wildcard": true,
+                                        "query": "email.keyword:\\"%s\\" AND !%s.keyword:\\"%s\\""
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }''' % (field, user_login, email, field, user_login)
+                self.esClient.updateByQuery(query=query.encode('utf-8'))
+
+    def remove_deleted_branch(self, repo):
+        origin = repo.remote(name='origin')
+        origin.fetch()
+        branches = repo.git.branch('-r').split('\n')
+        old_branches = repo.heads
+        branches = [branch.split('/', 1)[1].strip() for branch in branches]
+        old_branches = [branch.name.strip() for branch in old_branches]
+        remove_branches = set(old_branches) - set(branches)
+        for branch in remove_branches:
+            self.deleted_branch(repo, branch)
+    
+    def deleted_branch(self, repo, branch):
+        try:
+            repo.git.branch('-D', branch)
+        except GitCommandError as e:
+            print(f'delete {branch} failed:', e)
 
     # 删除git lock
     def removeGitLockFile(self, code_path):
@@ -541,23 +749,25 @@ class GitCommitLog(object):
 
     # 获取white box指定仓库的commit
     def getCommitWhiteBox(self, repos, branch=''):
-        for repo in repos:
-            items = repo.split('/')
-            platform = items[2].replace('.com', '').replace('.co', '')
-            owner = items[-2]
-            repo_name = items[-1]
-            branch_name = branch
-            path = '/'.join(items[3::])
-            try:
-                self.getLog(platform, owner, repo_name, branch_name, path)
-            except Exception:
-                print('*** platform: %s, owner: %s, repo: %s, fail ***' % (platform, owner, repo))
+        with ThreadPoolExecutor(max_workers=self.thread_pool_num) as executor:
+            for repo in repos:
+                items = repo.split('/')
+                platform = items[2].replace('.com', '').replace('.co', '')
+                owner = items[3]
+                repo_name = '/'.join(items[4::])
+                branch_name = branch
+                path = '/'.join(items[3::])
+                if items[2].startswith("codehub.devcloud.cn"):
+                    platform = items[2]
+                executor.submit(self.getLog, platform, owner,
+                                repo_name, branch_name, path)
 
     # upstream 需要从yaml中获取组织
     def getUpstreamCompany(self, user_file, company_yaml):
         email_org_dict = {}
         domain_org_dict = {}
         email_user_dict = {}
+        email_login_dict = {}
         try:
             domain_org_dict, aliases_company_dict = self.get_domain_org(company_yaml)
 
@@ -573,14 +783,16 @@ class GitCommitLog(object):
                     company['company_name'] = user_company
                     user_companies.append(company)
 
-                user_companies.sort(key=lambda x: x['end_date'])
+                user_companies.sort(key=lambda x: x['end_date'] if x['end_date'] else '9999-12-31')
                 for email in user['emails']:
                     email_org_dict.update({email: user_companies})
                     email_user_dict.update({email: user.get('user_name')})
+                    if not email_login_dict.get(email):
+                        email_login_dict.update({email: user.get('github_id')})
 
-            return email_org_dict, domain_org_dict, email_user_dict
+            return email_org_dict, domain_org_dict, email_user_dict, email_login_dict
         except Exception:
-            return email_org_dict, domain_org_dict, email_user_dict
+            return email_org_dict, domain_org_dict, email_user_dict, email_login_dict
 
     def get_domain_org(self, company_yaml):
         domain_org_dict = {}
@@ -595,7 +807,8 @@ class GitCommitLog(object):
                 for domain in company['domains']:
                     domain_org_dict.update({domain: company_name})
             return domain_org_dict, aliases_company_dict
-        except Exception:
+        except Exception as e:
+            print(f'Get domain org error: {e}')
             return domain_org_dict, aliases_company_dict
 
     def get_yaml_file(self, yaml_file):
@@ -624,6 +837,7 @@ class GitCommitLog(object):
         headers = {'Authorization': f'token {token}'}
         response = requests.get(yaml_file, headers=headers, verify=False, timeout=60)
         if response.status_code != 200:
+            print('Cannot fetch yaml list.', response.text)
             return yaml_list
         for file in response.json():
             if file.get('download_url', '').endswith('yaml'):
